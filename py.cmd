@@ -8,7 +8,7 @@ rem   Get-Content py_last.log -Encoding UTF8
 rem 用法：cmd /c py.cmd your_script.py [参数...]（退出码原样透传）
 rem
 setlocal
-set "PY=C:\Users\janni\AppData\Local\Programs\Python\Python39\python.exe"
+set "PY=python"
 set "LOG=%~dp0py_last.log"
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUNBUFFERED=1"

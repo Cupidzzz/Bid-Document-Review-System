@@ -10,7 +10,7 @@ cd /d "%~dp0"
 rem optional port arg (e.g. stop_server.cmd 8770); default 8767
 set "PORT=%~1"
 if "%PORT%"=="" set "PORT=8767"
-set "PY=C:\Users\janni\AppData\Local\Programs\Python\Python39\python.exe"
+set "PY=python"
 if not exist "%PY%" set "PY=python"
 
 rem the real work: ops\_stop_port.py finds the listener by port and kills it,

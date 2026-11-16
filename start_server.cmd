@@ -39,7 +39,7 @@ if not defined OCR_ENGINE set "OCR_ENGINE=openvino"
 rem Server output stays UTF-8 regardless of console code page
 rem Force Python output to UTF-8 to avoid log mojibake across code pages.
 if not defined PYTHONIOENCODING set "PYTHONIOENCODING=utf-8"
-set "PY=C:\Users\janni\AppData\Local\Programs\Python\Python39\python.exe"
+set "PY=python"
 if not exist "%PY%" set "PY=python"
 
 rem --- 1) wake target ---
