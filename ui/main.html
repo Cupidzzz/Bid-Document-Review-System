@@ -1,0 +1,3504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>投标文件复核</title>
+<style>
+/* ===== 语义色（统一口径）=====
+   预计/未完成 = 橙    实际/已完成 = 绿
+   信息/中性   = 蓝    次要说明   = 灰    错误 = 红 */
+:root{
+  --c-est:#b4451f;      /* 预计：文字 */
+  --c-est-bar:#e08a3c;  /* 预计：进度条、边线 */
+  --c-est-bg:#fdf0e6;   /* 预计：浅底 */
+  --c-act:#1d7a4d;      /* 实际/已完成 */
+  --c-act-bg:#e6f4ec;   /* 实际：浅底 */
+  --c-info:#1554b0;     /* 信息主色、进度条主体 */
+  --c-info-bg:#eaf1fa;  /* 信息：表头浅蓝 */
+  --c-mute:#8b96a5;     /* 次要说明 */
+  --c-mute2:#5a6675;    /* 次要说明（深） */
+  --c-err:#c0392b;      /* 错误 */
+  --c-line:#eef2f7;     /* 分隔线、进度槽 */
+  --c-line2:#e2e8f0;    /* 边框 */
+  /* 旧 token 改为引用语义色，保持原样式不变 */
+  --ink:#1f2733;--ink2:var(--c-mute2);--ink3:var(--c-mute);
+  --line:var(--c-line2);--line2:var(--c-line);
+  --bg:#f4f6fa;--card:#fff;
+  --acc:var(--c-info);--ok:var(--c-act);--warn:var(--c-est)
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+.top{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:10px;
+padding:10px 18px;background:var(--card);border-bottom:1px solid var(--line)}
+.brand{font-weight:700;color:var(--acc)}
+.spacer{flex:1}
+button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;
+background:#fff;color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--acc);color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.primary:hover{opacity:.9;color:#fff}
+button.mini{padding:2px 8px;font-size:12px}
+button.danger:hover{border-color:var(--warn);color:var(--warn)}
+/* ===== 自定义 dialog（替代原生 confirm/alert）===== */
+dialog.dlg{border:none;border-radius:14px;padding:0;width:min(560px,92vw);
+  background:var(--card);box-shadow:0 24px 70px rgba(15,23,42,.32);color:var(--ink);
+  animation:dlgIn .18s ease}
+@keyframes dlgIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+dialog.dlg::backdrop{background:rgba(15,23,42,.5);animation:dlgBack .18s ease}
+@keyframes dlgBack{from{opacity:0}to{opacity:1}}
+.dlg-head{padding:15px 20px;font-weight:700;font-size:16px;color:var(--ink);
+  border-bottom:1px solid var(--line);display:flex;align-items:center}
+.dlg-body{padding:16px 20px;max-height:62vh;overflow:auto;font-size:13px;line-height:1.8;
+  color:var(--ink2);white-space:pre-wrap;word-break:break-word}
+.dlg-body b,.dlg-body strong{color:var(--ink)}
+.dlg-row{display:flex;justify-content:flex-end;gap:10px;padding:13px 20px;
+  border-top:1px solid var(--line);background:var(--bg);border-radius:0 0 14px 14px}
+.dlg-row button{min-width:88px;padding:7px 16px;border-radius:7px;font-weight:600}
+.dlg-row button:not(.primary):not(.danger){background:var(--card);border-color:var(--line2);
+  color:var(--ink2)}
+.dlg-row button:not(.primary):not(.danger):hover{color:var(--ink);border-color:var(--acc)}
+.dlg-row button.danger{background:var(--c-err);border-color:var(--c-err);color:#fff}
+.dlg-row button.danger:hover{opacity:.88;color:#fff;border-color:var(--c-err)}
+main{max-width:1180px;margin:0 auto;padding:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+padding:14px 16px;margin-bottom:16px}
+h2{margin:0 0 12px;font-size:15px;color:var(--acc)}
+/* 模块折叠 */
+.card>h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px}
+.card>h2::before{content:'▾';font-size:12px;color:var(--c-mute)}
+.card.collapsed>h2::before{content:'▸'}
+.card.collapsed>h2{margin-bottom:0}
+.card.collapsed>*:not(h2){display:none}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2)}
+input,textarea{font:inherit;padding:6px 9px;border:1px solid var(--line);
+border-radius:6px;background:#fff;color:var(--ink)}
+input:focus,textarea:focus{outline:none;border-color:var(--acc)}
+/* 统一字段高度：file 输入内嵌按钮，默认比文本框高，这里强制等高 */
+label.f>input{height:34px}
+label.f>input[type=file]{height:34px;padding:4px 6px;line-height:normal;box-sizing:border-box}
+label.f>input[type=file]::file-selector-button{height:24px;padding:0 10px;margin-right:8px;
+border:1px solid var(--line);border-radius:4px;background:#f7f9fc;color:var(--ink);cursor:pointer}
+label.f>input[type=file]::file-selector-button:hover{border-color:var(--acc);color:var(--acc)}
+textarea{resize:vertical;min-height:56px;width:100%}
+.grp{border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.grph{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f7f9fc;
+border-bottom:1px solid var(--line2)}
+.grph input.gname{font-weight:600;width:220px}
+.items{padding:10px 12px}
+.item{border:1px solid var(--line2);border-radius:8px;padding:10px;margin-bottom:10px;background:#fcfdff}
+.itemhd{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.itemhd input.iname{font-weight:600;flex:1;min-width:180px}
+  /* ---- 拖动排序 ---- */
+  .dhandle{cursor:grab;user-select:none;color:var(--c-mute);font-size:15px;
+    line-height:1;padding:2px 7px;border-radius:5px;border:1px solid transparent}
+  .dhandle:hover{background:var(--c-est-bg);color:var(--c-est);border-color:var(--c-est-bar)}
+  .dhandle:active{cursor:grabbing}
+  .item.dragging,.grp.dragging{opacity:.42}
+  .item.drop-before,.grp.drop-before{box-shadow:0 -3px 0 0 var(--c-info)}
+  .item.drop-after,.grp.drop-after{box-shadow:0 3px 0 0 var(--c-info)}
+  .items.drop-empty{outline:2px dashed var(--c-info);outline-offset:-4px;border-radius:6px}
+.num{width:78px}
+.muted{color:var(--ink3);font-size:12px}
+.hint{padding:8px 12px;border-radius:6px;background:#eef6ff;border:1px solid #cfe3fb;
+color:var(--c-info);font-size:13px;margin-bottom:12px}
+.ok{background:#eefaf3;border-color:#c6ecd8;color:var(--ok)}
+.err{background:#fdecea;border-color:#f6cfc9;color:var(--warn)}
+.sum{display:flex;gap:18px;font-size:13px;color:var(--ink2);margin-bottom:10px}
+.sum b{color:var(--acc)}
+/* 汇总表点行跳转时，高亮一下目标明细 */
+.flash{animation:flashbg 1.4s ease}
+@keyframes flashbg{0%{box-shadow:0 0 0 3px var(--c-est-bar);border-color:var(--c-est-bar)}
+  100%{box-shadow:0 0 0 3px rgba(0,0,0,0);border-color:var(--c-line2)}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="brand">投标文件复核</span>
+  <span class="muted" id="verBadge" title=""></span>
+  <span class="muted" id="st">加载中…</span>
+  <span class="muted" id="busyBar" title="系统当前在做什么"></span>
+  <span class="spacer"></span>
+  <select id="projSel" style="width:340px;max-width:340px;padding:6px 9px;border:1px solid var(--c-line2);border-radius:6px;text-overflow:ellipsis"></select>
+  <button id="btnProjReset" style="border-color:#e8b4b4;color:#c0392b">数据重置</button>
+  <button id="btnProjDelete" style="border-color:#e8b4b4;color:#c0392b">删除项目</button>
+</div>
+
+<div id="delPanel" style="display:none;background:#fff7f7;border:1px solid #e8b4b4;
+     border-radius:8px;padding:12px 14px;margin:10px 0 0">
+  <div style="font-weight:700;font-size:13px;color:#c0392b;margin-bottom:6px">
+    删除项目　<span class="muted" style="font-weight:400" id="delProjName"></span>
+  </div>
+  <div class="hint" style="margin:0 0 8px">
+    删除后该项目不再出现在下拉列表。为防误删，项目目录会被**整体移入**
+    程序目录下的「_项目回收站」，需要时把该目录移回「项目」即可恢复；
+    同时会取消该项目未完成的队列任务。
+  </div>
+  <div class="row" style="align-items:flex-end">
+    <label class="f">输入项目名称以确认
+      <input id="delConfirm" placeholder="手工输入完整项目名称" style="width:320px"></label>
+    <button class="primary" id="btnDelGo" style="background:#c0392b;border-color:#c0392b">确认删除</button>
+    <button id="btnDelCancel">取消</button>
+    <span class="muted" id="delMsg"></span>
+  </div>
+</div>
+
+<div id="resetPanel" style="display:none;background:#fff7f7;border:1px solid #e8b4b4;
+     border-radius:8px;padding:12px 14px;margin:10px 0 0">
+  <div style="font-weight:700;font-size:13px;color:#c0392b;margin-bottom:6px">
+    数据重置　<span class="muted" style="font-weight:400" id="resetProjName"></span>
+  </div>
+  <div class="hint" style="margin:0 0 8px">
+    勾选要清空的内容。执行前会把将被删除的内容备份到项目目录下的
+    「_重置备份_时间戳」，误删可从那里取回；「招标文件」不会被清理。
+  </div>
+  <div id="resetScope" style="font-size:13px;margin-bottom:8px"></div>
+  <div class="row" style="align-items:flex-end">
+    <label class="f">输入项目名称以确认
+      <input id="resetConfirm" placeholder="手工输入完整项目名称" style="width:320px"></label>
+    <button class="primary" id="btnResetGo" style="background:#c0392b;border-color:#c0392b">执行重置</button>
+    <button id="btnResetCancel">取消</button>
+    <span class="muted" id="resetMsg"></span>
+  </div>
+</div>
+
+<main>
+  <div id="msg"></div>
+
+  <div class="card">
+    <h2>项目信息</h2>
+    <div class="row">
+      <label class="f">项目名称<input id="pname" style="width:420px" placeholder="如：佛山季华A4写字楼装修幕墙（含空调供货安装）工程"></label>
+      <label class="f">项目编号<input id="pno" style="width:240px" placeholder="如：GCJS2025GD000833"></label>
+      <button class="primary" id="btnProjSave" style="align-self:flex-end">保存</button>
+      <span class="muted" id="pmsg2" style="align-self:flex-end"></span>
+    </div>
+    <div class="hint">点「保存」后，服务端会建立：{项目名称}\ 投标文件、招标文件、评委打分、复核报告（四个子目录），并写入 项目信息.json。</div>
+    <div id="plist"></div>
+  </div>
+
+  <div class="card">
+    <h2>评分标准</h2>
+    <div class="sum" id="sum"></div>
+    <div class="row" style="align-items:center;margin:6px 0 2px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--c-mute2)">
+        <input type="checkbox" id="wMode" style="width:auto;margin:0">
+        <span>启用权重折算（只复核客观分的项目才需要；不勾选时一切与现在相同）</span>
+      </label>
+      <span class="muted" id="wHint" style="font-size:12px"></span>
+    </div>
+      <div class="hint" style="margin:-4px 0 8px">按住评分项左侧「⋮⋮」可拖动调整顺序，拖到其他分组内即移动到该分组；「序号」是评分项的身份标识，拖动后不变。</div>
+    <div class="row">
+      <button id="btnAddGrp">+ 新增分组</button>
+      <button class="primary" id="btnRuleSave">保存</button>
+      <button id="btnLoad">从磁盘重新载入</button>
+      <span class="muted" id="rmsg"></span>
+    </div>
+    <div class="hint">分组与评分项由你设置。点「保存」时系统会自动逐项拆解你写的评分标准文字（时间窗口／金额门槛／单项分／封顶／关键词），在下方列出解析结果并写入「评分标准_解读.json」，用于检查标准是否写得足够结构化。此解析不参与打分。</div>
+    <div id="rparse"></div>
+    <div id="groups"></div>
+  </div>
+
+  <div class="card">
+    <h2>招标文件</h2>
+    <div class="row" style="align-items:flex-end">
+      <label class="f">选择招标文件<input type="file" id="tfile" accept=".doc,.docx,.md,.pdf" style="width:300px"></label>
+      <button class="primary" id="btnTender">保存</button>
+      <button id="btnTenderCheck">校验标准</button>
+      <span class="muted" id="tmsg" style="padding-bottom:7px"></span>
+    </div>
+    <div class="hint">支持 .doc / .docx / .md / .pdf。点「保存」把文件归档到「当前项目 \ 招标文件」并抽取全文与表格；点「校验标准」用该招标文件核对你的评分的评分标准（名称、分值、合计是否对得上）。<br><b>注意</b>：<code>.doc</code> 是旧格式，只能近似抽取（表格结构会丢），建议用 Word/WPS 另存为 <code>.docx</code> 再上传。</div>
+    <div id="tenders"></div>
+    <div id="tcheck"></div>
+  </div>
+
+  <div class="card">
+    <h2>投标文件</h2>
+    <div class="row" style="align-items:flex-end">
+      <label class="f">投标单位<input id="bidder" style="width:300px" placeholder="如：深圳市德勤建工集团有限公司"></label>
+      <label class="f">选择投标文件<input type="file" id="bfile" accept=".doc,.docx,.pdf" style="width:300px"></label>
+      <button class="primary" id="btnUp">保存</button>
+      <span class="muted" id="bmsg" style="padding-bottom:7px"></span>
+    </div>
+    <div class="hint">支持 .doc / .docx / .pdf。按「投标单位」分文件夹存放：项目\{项目名}\投标文件\{投标单位}\。点「保存」即归档到该项目该单位下。<br><b>注意</b>：<code>.doc</code> 只能近似抽取（表格会压平成文字），
+    涉及业绩表/获奖表时建议另存为 <code>.docx</code>。</div>
+    <div id="bids"></div>
+  </div>
+
+
+  <div class="card">
+    <h2>评分结果</h2>
+    <div class="row">
+      <select id="reviewUnitSel" title="一次只复核一家；同一家不允许重复提交"
+              style="width:300px;padding:6px 9px;border:1px solid var(--c-line2);border-radius:6px;text-overflow:ellipsis">
+        <option value="">选择要复核的单位</option>
+      </select>
+      <button class="primary" id="btnStartReview">开始复核</button>
+      <button id="btnSelfCheck">自检</button>
+      <button id="btnReloadScores">刷新结果</button>
+      <button id="btnAssignSession" title="给本项目分配专属复核会话">分配会话</button>
+      <button id="btnArchive">生成汇总</button>
+      <button id="btnGenPoints">生成要点</button>
+      <button id="btnViewPoints">查看要点</button>
+      <button id="btnViewSummary">查看汇总</button>
+      <button id="btnArchive2">归档</button>
+      <span id="engineBadge" class="muted" title=""></span>
+      <span id="sessBadge" class="muted" title=""></span>
+      <span id="projState"></span>
+      <span class="muted" id="amsg"></span>
+    </div>
+    <div class="hint">「自检」只查投标文件里关键材料是否齐备（业绩表/获奖表/工法/人员配备/简历/证书），不给分。「开始复核」才是把任务提交给 agent，由 agent 逐项判定打分。</div>
+    <div id="submitLast" class="hint" style="display:none"></div>
+    <div class="card" style="margin-top:12px;padding:12px 14px;background:#f7f9fc">
+      <div style="font-weight:700;margin-bottom:6px">OCR 识别
+        <span class="muted" style="font-size:12px;font-weight:400">勾选需要识别的文件（默认全选）；未勾选的文件不识别，复核时只读文字层</span>
+      </div>
+      <div class="row" style="align-items:flex-end">
+        <select id="ocrUnitSel" style="width:320px;padding:6px 9px;border:1px solid var(--c-line2);border-radius:6px;text-overflow:ellipsis">
+          <option value="">选择要 OCR 的投标单位</option>
+        </select>
+        <button class="primary" id="btnStartOcr">开始 OCR</button>
+        <span class="muted" id="ocrMsg"></span>
+      </div>
+      <div id="ocrFiles" style="margin-top:8px"></div>
+    </div>
+    <div id="units"></div>
+    <div id="queue"></div>
+    <div id="autoResult"></div>
+    <div id="summary"></div>
+    <div id="scores"></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+      <h2 style="display:flex;align-items:center;gap:10px">专家打分对比
+        <span class="muted" style="font-size:12px;font-weight:400">商务部分均为客观分，导入一名专家的打分表即可</span>
+      </h2>
+      <div class="row" style="align-items:flex-end">
+        <label class="f">打分表（PDF）<input type="file" id="expFile" accept=".pdf,.png,.jpg,.jpeg" style="width:300px"></label>
+        <button class="primary" id="btnExpImport">导入</button>
+        <button id="btnExpReset" title="清空已解析的比对数据，可重新导入">重置</button>
+        <button id="btnExpExport" title="导出比对结果，导出时可选择保存位置">导出</button>
+        <span class="muted" id="expMsg"></span>
+      </div>
+      <div class="hint">导入后由 AI 解析打分表（复杂版式、扫描件也能读），解析完成自动与系统复核结果逐项比对。</div>
+      <div id="expProgBox" style="display:none;margin:8px 0 12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="flex:1;height:14px;background:var(--c-line);border-radius:7px;overflow:hidden">
+            <div id="expProgBar" style="height:100%;width:0%;background:var(--c-info);
+              transition:width .25s ease"></div>
+          </div>
+          <span id="expProgPct" style="font-size:12px;font-weight:700;
+            color:var(--c-info);min-width:44px;text-align:right">0%</span>
+        </div>
+        <div id="expProgStage" style="font-size:12px;color:var(--c-mute2);margin-top:4px"></div>
+      </div>
+      <div id="expResult"></div>
+    </div>
+</main>
+
+<script>
+var D = { 项目: { 名称: '', 编号: '' }, 分组: [] };
+
+function el(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  if (attrs) for (var k in attrs) {
+    if (k === 'text') e.textContent = attrs[k];
+    else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+  return e;
+}
+
+// ===== 自定义对话框（替代原生 confirm / alert）=====
+// dlgShow 返回 Promise，resolve 用户点的按钮 key；Esc / 点遮罩 = null
+function dlgShow(title, html, buttons) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var d = document.createElement('dialog');
+    d.className = 'dlg';
+    var head = el('div', { class: 'dlg-head', text: title });
+    var body = el('div', { class: 'dlg-body' });
+    body.innerHTML = html;          // 支持 \n 换行与简单富文本
+    var row = el('div', { class: 'dlg-row' });
+    var focusBtn = null;
+    (buttons || []).forEach(function (b) {
+      var btn = el('button', {
+        class: (b.primary ? 'primary ' : '') + (b.danger ? 'danger' : ''),
+        text: b.text
+      });
+      btn.onclick = function () { finish(b.key); };
+      row.appendChild(btn);
+      if (b.focus) focusBtn = btn;
+    });
+    d.appendChild(head); d.appendChild(body); d.appendChild(row);
+    function finish(key) {
+      if (done) return;
+      done = true;
+      d.close();
+      d.remove();
+      resolve(key);
+    }
+    d.addEventListener('cancel', function (e) { e.preventDefault(); finish(null); });
+    d.addEventListener('click', function (e) { if (e.target === d) finish(null); });
+    document.body.appendChild(d);
+    d.showModal();
+    if (focusBtn) focusBtn.focus();
+  });
+}
+
+function dlgConfirm(title, html, opts) {
+  opts = opts || {};
+  var btns = [
+    { key: false, text: opts.cancelText || '取消', focus: true },
+    { key: true, text: opts.okText || '确定', primary: !opts.danger, danger: !!opts.danger }
+  ];
+  return dlgShow(title, html, btns).then(function (k) { return k === true; });
+}
+
+function dlgAlert(title, html) {
+  return dlgShow(title, html, [{ key: true, text: '知道了', primary: true, focus: true }]);
+}
+
+// 模块折叠：card 的 h2 点击切换折叠/展开
+function initCollapse() {
+  document.querySelectorAll('.card > h2').forEach(function (h2) {
+    h2.title = '点击折叠 / 展开本模块';
+    h2.addEventListener('click', function () {
+      h2.parentElement.classList.toggle('collapsed');
+    });
+  });
+}
+
+// 前端运行日志：上报到服务端 work\front_log.json（失败静默，不影响主流程）
+function frontLog(level, msg, extra) {
+  try {
+    fetch('/api/frontlog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 级别: level, 消息: msg, 上下文: extra || '' })
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+// 全局未捕获异常 + 未处理的 Promise 拒绝，都上报
+window.addEventListener('error', function (e) {
+  frontLog('error', '未捕获异常：' + (e.message || ''),
+    (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var r = e.reason;
+  frontLog('error', '未处理的 Promise 拒绝：' + ((r && r.message) || String(r)));
+});
+function msg(t, cls) {
+  var m = document.getElementById('msg');
+  m.innerHTML = '';
+  if (t) m.appendChild(el('div', { class: 'hint ' + (cls || ''), text: t }));
+}
+
+function blankItem() {
+  return { 序号: '', 名称: '', 分值: null, 上限: null, 评分标准: '' };
+}
+function blankGrp() { return { 名称: '', 说明: '', 项: [] }; }
+
+// 只刷新顶部合计行，不重建 DOM（输入过程中调用它，避免焦点与滚动位置丢失）
+function grpSum(g) {
+  var v = 0;
+  (g.项 || []).forEach(function (it) {
+    if (typeof it.分值 === 'number') v += it.分值;
+  });
+  return v;
+}
+function grpWeight(g) {
+  return (typeof g.权重 === 'number' && !isNaN(g.权重)) ? g.权重 : 0;
+}
+function wsum() {                       // 启用折算时：折算满分合计
+  var fz = 0;
+  if (!D.权重折算) return { on: false, fz: 0 };
+  (D.分组 || []).forEach(function (g) {
+    if (g.参与折算 === false) return;
+    fz += grpSum(g) * grpWeight(g) / 100;
+  });
+  return { on: true, fz: fz };
+}
+
+function updateSum() {
+  var n = 0, pts = 0;
+  (D.分组 || []).forEach(function (g) {
+    (g.项 || []).forEach(function (it) {
+      n++; if (typeof it.分值 === 'number') pts += it.分值;
+    });
+  });
+  var s = document.getElementById('sum');
+  var w = wsum();
+  if (s) {
+    s.innerHTML = '分组 <b>' + (D.分组 || []).length + '</b> 个　评分项 <b>' + n +
+      '</b> 项　分值合计 <b>' + (Math.round(pts * 100) / 100) + '</b>' +
+      (w.on ? ('　折算满分合计 <b>' + (Math.round(w.fz * 100) / 100) +
+               '</b> / 100（客观分）') : '');
+  }
+  var h = document.getElementById('wHint');
+  if (h) {
+    h.textContent = w.on
+      ? ('折算满分合计 ' + (Math.round(w.fz * 100) / 100) + ' / 100' +
+         (w.fz > 100.001 ? '（超过 100，请检查权重）' : '（不足 100 属正常：主观项不在复核范围）'))
+      : '';
+    h.style.color = (w.on && w.fz > 100.001) ? 'var(--c-err)' : 'var(--c-mute)';
+  }
+}
+
+// ===== 拖动排序：评分项可在分组内排序，也可拖进别的分组；分组亦可排序 =====
+var DRAG = { kind: null, gi: -1, ii: -1 };
+var saveTimer = null;
+
+function autoSaveOrder() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(function () {
+    var pn = document.getElementById('pname').value.trim();
+    if (!D.项目) D.项目 = {};
+    if (pn) D.项目.名称 = pn;
+    if (!pn) { return; }   // 未选项目不写盘，避免写到全局遗留文件
+    fetch('/api/rules', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(D)
+    }).then(function (r) { return r.json(); }).then(function (r) {
+      var st = document.getElementById('st');
+      if (r.ok && st) st.textContent = '顺序已保存 ' + r['保存时间'];
+      if (!r.ok) msg('顺序保存失败：' + r.error, 'err');
+    }).catch(function () {});
+  }, 600);
+}
+
+function clearDropMarks() {
+  var all = document.querySelectorAll('.drop-before,.drop-after,.drop-empty');
+  Array.prototype.forEach.call(all, function (e) {
+    e.classList.remove('drop-before', 'drop-after', 'drop-empty');
+  });
+}
+
+function dropPos(e, node) {
+  var r = node.getBoundingClientRect();
+  return (e.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+}
+
+// 把 (fromGi,fromIi) 移到 (toGi) 中第 toIi 项的前/后
+function moveItem(fromGi, fromIi, toGi, toIi, pos) {
+  var src = D.分组[fromGi];
+  if (!src || !src.项 || !src.项[fromIi]) return;
+  var dst = D.分组[toGi];
+  if (!dst) return;
+  var at = toIi + (pos === 'after' ? 1 : 0);
+  var it = src.项.splice(fromIi, 1)[0];
+  if (fromGi === toGi && fromIi < at) at -= 1;
+  dst.项 = dst.项 || [];
+  dst.项.splice(Math.max(0, Math.min(at, dst.项.length)), 0, it);
+}
+
+// 拖到某个分组的空白处（含空分组）→ 追加到末尾
+function moveItemToEnd(fromGi, fromIi, toGi) {
+  var src = D.分组[fromGi];
+  if (!src || !src.项 || !src.项[fromIi]) return;
+  var dst = D.分组[toGi];
+  if (!dst) return;
+  var it = src.项.splice(fromIi, 1)[0];
+  dst.项 = dst.项 || [];
+  dst.项.push(it);
+}
+
+function moveGroup(fromGi, toGi, pos) {
+  if (fromGi === toGi) return;
+  var at = toGi + (pos === 'after' ? 1 : 0);
+  var g = D.分组.splice(fromGi, 1)[0];
+  if (fromGi < at) at -= 1;
+  D.分组.splice(Math.max(0, Math.min(at, D.分组.length)), 0, g);
+}
+
+function render() {
+  document.getElementById('pname').value = D.项目.名称 || '';
+  document.getElementById('pno').value = D.项目.编号 || '';
+  var box = document.getElementById('groups');
+  box.innerHTML = '';
+  window._fzUpdaters = [];          // 每次重建时清空，避免闭包指向已删除的节点
+  D.分组.forEach(function (g, gi) { box.appendChild(grpView(g, gi)); });
+  var cb = document.getElementById('wMode');
+  if (cb) cb.checked = !!D.权重折算;
+  updateSum();
+}
+
+// 分组级「参与折算 / 权重 / 折算满分」
+function wBox(g) {
+  var cb = el('input', { type: 'checkbox',
+    title: '该分组参与权重折算', style: 'width:auto;margin:0' });
+  cb.checked = (g.参与折算 !== false);
+  var w = el('input', { type: 'number', step: '0.01', min: '0', max: '100',
+    placeholder: '权重%', style: 'width:76px' });
+  w.value = (g.权重 === null || g.权重 === undefined) ? '' : g.权重;
+  var fz = el('span', { class: 'muted', style: 'font-size:12px;white-space:nowrap' });
+
+  function refresh() {
+    var full = grpSum(g), wv = grpWeight(g);
+    fz.textContent = 'Σ项 ' + (Math.round(full * 100) / 100) + ' × ' +
+      wv + '% = 折算满分 ' + (Math.round(full * wv) / 100);
+    fz.style.color = 'var(--c-mute)';
+    updateSum();
+  }
+  cb.addEventListener('change', function () {
+    g.参与折算 = cb.checked;
+    render();
+  });
+  w.addEventListener('input', function () {
+    g.权重 = (w.value === '') ? null : parseFloat(w.value);
+    refresh();
+    (window._fzUpdaters || []).forEach(function (f) { try { f(); } catch (e) {} });
+  });
+  refresh();
+  return el('span', { style: 'display:inline-flex;align-items:center;gap:6px;' +
+    'font-size:12px;color:var(--c-mute2);margin-right:6px' },
+    [cb, el('span', { text: '参与折算' }), w, fz]);
+}
+
+function grpView(g, gi) {
+  var name = el('input', { class: 'gname', placeholder: '分组名称（任意）', value: g.名称 || '' });
+  name.addEventListener('input', function () { g.名称 = name.value; updateSum(); });
+
+  var desc = el('input', { placeholder: '说明（可选）', style: 'flex:1', value: g.说明 || '' });
+  desc.addEventListener('input', function () { g.说明 = desc.value; });
+
+  var add = el('button', { class: 'mini', text: '+ 评分项', onclick: function () {
+    g.项 = g.项 || []; g.项.push(blankItem()); render();
+  } });
+  var del = el('button', { class: 'mini danger', text: '删除分组', onclick: async function () {
+    if (!(await dlgConfirm('删除分组', '删除分组「' + (g.名称 || '(未命名)') + '」及其下所有评分项？', { danger: true }))) return;
+    D.分组.splice(gi, 1); render();
+  } });
+  var gh = el('span', { class: 'dhandle', draggable: 'true', title: '按住拖动可调整分组顺序' });
+  gh.textContent = '⋮⋮';
+
+  var items = el('div', { class: 'items' });
+  (g.项 || []).forEach(function (it, ii) { items.appendChild(itemView(g, it, ii, gi)); });
+  if (!(g.项 || []).length) {
+    items.appendChild(el('div', { class: 'muted', text: '（该分组下暂无评分项，可把别的评分项拖进来）' }));
+  }
+
+  var hdr = [gh, name];
+  if (D.权重折算) hdr.push(wBox(g));
+  hdr.push(desc, add, del);
+  var grpEl = el('div', { class: 'grp' }, [
+    el('div', { class: 'grph' }, hdr), items
+  ]);
+
+  gh.addEventListener('dragstart', function (e) {
+    DRAG = { kind: 'grp', gi: gi, ii: -1 };
+    grpEl.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'grp' + gi);
+  });
+  gh.addEventListener('dragend', function () {
+    grpEl.classList.remove('dragging'); clearDropMarks();
+  });
+  grpEl.addEventListener('dragover', function (e) {
+    if (DRAG.kind !== 'grp') return;
+    e.preventDefault();
+    var pos = dropPos(e, grpEl);
+    clearDropMarks();
+    grpEl.classList.add(pos === 'before' ? 'drop-before' : 'drop-after');
+  });
+  grpEl.addEventListener('drop', function (e) {
+    if (DRAG.kind !== 'grp') return;
+    e.preventDefault();
+    var pos = dropPos(e, grpEl);
+    clearDropMarks();
+    var from = DRAG.gi;
+    DRAG = { kind: null, gi: -1, ii: -1 };
+    moveGroup(from, gi, pos);
+    render(); autoSaveOrder();
+  });
+
+  // 评分项拖到分组空白处 → 追加到该分组末尾
+  items.addEventListener('dragover', function (e) {
+    if (DRAG.kind !== 'item') return;
+    e.preventDefault();
+    items.classList.add('drop-empty');
+  });
+  items.addEventListener('dragleave', function () {
+    items.classList.remove('drop-empty');
+  });
+  items.addEventListener('drop', function (e) {
+    if (DRAG.kind !== 'item') return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearDropMarks();
+    var from = DRAG.gi, fi = DRAG.ii;
+    DRAG = { kind: null, gi: -1, ii: -1 };
+    moveItemToEnd(from, fi, gi);
+    render(); autoSaveOrder();
+  });
+
+  return grpEl;
+}
+
+function itemView(g, it, ii, gi) {
+  function fld(key, label, opts) {
+    opts = opts || {};
+    var inp;
+    if (opts.textarea) {
+      inp = el('textarea', { placeholder: opts.ph || '' });
+      inp.value = it[key] || '';
+    } else {
+      inp = el('input', { class: opts.cls || '', placeholder: opts.ph || '' });
+      inp.value = (it[key] === null || it[key] === undefined) ? '' : it[key];
+      if (opts.num) { inp.setAttribute('type', 'number'); inp.setAttribute('step', '0.1'); }
+    }
+    inp.addEventListener('input', function () {
+      if (opts.num) it[key] = (inp.value === '') ? null : parseFloat(inp.value);
+      else it[key] = inp.value;
+      // 只更新合计，绝不重建 DOM：否则输入焦点与滚动位置会丢失，
+      // 表现为"打字时光标跳走 / 页面跳到顶部"
+      if (opts.num) updateSum();
+      if (opts.onchange) opts.onchange();
+    });
+    return el('label', { class: 'f', style: opts.full ? 'flex:1 1 100%' : '' },
+      [el('span', { text: label }), inp]);
+  }
+
+  var dh = el('span', { class: 'dhandle', draggable: 'true',
+    title: '按住拖动可调整顺序；拖到别的分组可直接移过去' });
+  dh.textContent = '⋮⋮';
+
+  var fzSpan = el('span', { class: 'muted', style: 'font-size:12px;white-space:nowrap' });
+  function renderFz() {
+    var wv = grpWeight(g);
+    var v = (typeof it.分值 === 'number') ? it.分值 : 0;
+    var show = !!(D.权重折算 && g.参与折算 !== false && wv);
+    fzSpan.style.display = show ? '' : 'none';
+    if (show) fzSpan.textContent = '折算 ' + (Math.round(v * wv) / 100) + ' 分';
+  }
+  renderFz();
+  window._fzUpdaters = window._fzUpdaters || [];
+  window._fzUpdaters.push(renderFz);
+
+  var card = el('div', { class: 'item' }, [
+    el('div', { class: 'itemhd' }, [
+      dh,
+      el('span', { class: 'muted', text: '#' + (ii + 1) }),
+      fld('序号', '序号', { cls: 'num' }),
+      fld('名称', '评分项名称', { cls: 'iname' }),
+      fld('分值', '分值', { cls: 'num', num: true, onchange: renderFz }),
+      fld('上限', '上限', { cls: 'num', num: true }),
+      fzSpan,
+      el('button', { class: 'mini danger', style: 'align-self:flex-end', text: '删除', onclick: function () {
+        g.项.splice(ii, 1); render();
+      } })
+    ]),
+    fld('评分标准', '评分标准（必填，程序据此判断）', { textarea: true, full: true,
+      ph: '例：近5年完成的单项合同额≥3400万元的装修装饰业绩，每项3分，最高15分' })
+  ]);
+
+  dh.addEventListener('dragstart', function (e) {
+    DRAG = { kind: 'item', gi: gi, ii: ii };
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'item' + gi + '-' + ii);
+    try { e.dataTransfer.setDragImage(card, 24, 18); } catch (err) {}
+  });
+  dh.addEventListener('dragend', function () {
+    card.classList.remove('dragging'); clearDropMarks();
+  });
+  card.addEventListener('dragover', function (e) {
+    if (DRAG.kind !== 'item') return;
+    e.preventDefault();
+    e.stopPropagation();
+    var pos = dropPos(e, card);
+    clearDropMarks();
+    card.classList.add(pos === 'before' ? 'drop-before' : 'drop-after');
+  });
+  card.addEventListener('drop', function (e) {
+    if (DRAG.kind !== 'item') return;
+    e.preventDefault();
+    e.stopPropagation();
+    var pos = dropPos(e, card);
+    clearDropMarks();
+    var from = DRAG.gi, fi = DRAG.ii;
+    DRAG = { kind: null, gi: -1, ii: -1 };
+    moveItem(from, fi, gi, ii, pos);
+    render(); autoSaveOrder();
+  });
+
+  return card;
+}
+
+document.getElementById('wMode').onchange = function () {
+  D.权重折算 = this.checked;
+  if (D.权重折算) {
+    (D.分组 || []).forEach(function (g) {
+      if (g.参与折算 === undefined) g.参与折算 = true;
+    });
+  }
+  render();
+};
+
+document.getElementById('btnAddGrp').onclick = function () {
+  D.分组.push(blankGrp()); render();
+};
+
+document.getElementById('btnRuleSave').onclick = function () {
+  // 项目名称以「项目信息」里填的为准，同时写回评分标准的 项目 字段
+  if (!D.项目) D.项目 = {};
+  var pn = document.getElementById('pname').value.trim();
+  D.项目.名称 = pn || D.项目.名称 || '';
+  D.项目.编号 = document.getElementById('pno').value.trim() || D.项目.编号 || '';
+  if (!D.分组.length) { msg('还没有分组，先新增分组再保存。', 'err'); return; }
+  if (!D.项目.名称) {
+    msg('请先在「项目信息」里选择或新建项目，再保存评分标准。', 'err');
+    return;
+  }
+  if (D.权重折算) {
+    var errs = [], sumFz = 0;
+    (D.分组 || []).forEach(function (g, i) {
+      if (g.参与折算 === false) return;
+      var wv = grpWeight(g);
+      var nm = g.名称 || ('第 ' + (i + 1) + ' 组');
+      if (!(typeof g.权重 === 'number') || isNaN(g.权重)) {
+        errs.push('「' + nm + '」勾了参与折算，但权重没填');
+      } else if (wv <= 0) {
+        errs.push('「' + nm + '」权重必须大于 0');
+      } else if (wv > 100) {
+        errs.push('「' + nm + '」权重 ' + wv + '% 超过 100%');
+      } else {
+        sumFz += grpSum(g) * wv / 100;
+      }
+    });
+    if (errs.length) {
+      msg('保存被拦下：' + errs.join('；'), 'err');
+      return;
+    }
+    if (sumFz > 100.001 &&
+        !confirm('折算满分合计 ' + (Math.round(sumFz * 100) / 100) +
+                 ' 分，超过总分 100。\n\n权重可能填错，仍要保存吗？')) return;
+  } else {
+    // 未启用：不把折算字段写进文件，保持与旧版完全一致
+    delete D.权重折算;
+    (D.分组 || []).forEach(function (g) {
+      delete g.参与折算;
+      delete g.权重;
+    });
+  }
+  fetch('/api/rules', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(D)
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) { msg('保存失败：' + r.error, 'err'); return; }
+    document.getElementById('st').textContent = '已保存 ' + r['保存时间'];
+    var savedText = '已保存到磁盘　分组 ' + r['分组数'] + ' 个 / 评分项 ' +
+      r['评分项数'] + ' 项　路径 ' + r['路径'];
+    // 保存即解析：把结构化数据（每项抽到的条件）一并生成，省掉再点一次「解析」
+    msg(savedText + '　正在生成结构化数据…', 'ok');
+    parseRules(function (res) {
+      if (!res) { msg(savedText + '　但结构化数据生成失败（见下方提示）', 'err'); return; }
+      msg(savedText + '　解析完成：' + res['评分项数'] + ' 项 / ' + res['总分'] +
+        ' 分 —— 规则可复算 ' + res['规则可复算项数'] + ' 项 / ' +
+        res['规则可复算分'] + ' 分（复核后自动交叉校验）；需读文判定 ' +
+        res['需读文项数'] + ' 项 / ' + res['需读文分'] +
+        ' 分（读证书/工龄等材料，由复核 agent 判定，不需要人工）', 'ok');
+    });
+  }).catch(function (e) { msg('保存失败：' + e.message, 'err'); });
+};
+
+function loadProjectList() {
+  var sel = document.getElementById('projSel');
+  fetch('/api/project').then(function (r) { return r.json(); }).then(function (list) {
+    var cur = curProject().名称;
+    sel.innerHTML = '';
+    sel.appendChild(el('option', { value: '', text: '— 选择项目 —' }));
+    (list || []).forEach(function (p) {
+      var tag = '';
+      if (p['状态'] === '已归档') tag = ' ✓已归档';
+      var o = el('option', { value: p['项目名称'], text: p['项目名称'] +
+        (p['项目编号'] ? ('（' + p['项目编号'] + '）') : '') + tag });
+      if (p['项目名称'] === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+    var target = cur;
+    if (!target && list && list.length === 1) target = list[0]['项目名称'];
+    if (!target) {
+      try { target = localStorage.getItem('dsh_current_project') || ''; } catch (e) {}
+      var exists = (list || []).some(function (x) { return x['项目名称'] === target; });
+      if (!exists) target = '';
+    }
+    if (target) {
+      sel.value = target;
+      applyProject(target);
+    }
+  }).catch(function () {});
+}
+
+function applyProject(name) {
+  var sel = document.getElementById('projSel');
+  var opt = null;
+  Array.prototype.forEach.call(sel.options, function (o) {
+    if (o.value === name) opt = o;
+  });
+  document.getElementById('pname').value = name || '';
+  var pno = '';
+  if (opt) {
+    var m = /（(.+?)）$/.exec(opt.textContent);
+    if (m) pno = m[1];
+  }
+  document.getElementById('pno').value = pno;
+  try { localStorage.setItem('dsh_current_project', name || ''); } catch (e) {}
+  clearAllPanels(name);
+  pjMsgReset();          // 项目信息状态栏回到初始态（不显示上一个项目的保存结果）
+  loadProjects();        // 列表只显示当前项目；未选项目时给引导语
+  boot();            // 重新载入该项目的评分标准（未选项目时置空）
+  loadUnits();
+  loadScores();
+  loadQueue();
+  loadTenders();
+  loadBids();
+  loadOcrUnits();
+  // 会话徽标按项目取：项目一旦确定必须重查，否则会停在上一次的"未分配"
+  if (typeof loadSessionHealth === 'function') loadSessionHealth();
+  if (typeof loadSubmitLast === 'function') loadSubmitLast();
+  if (typeof loadBusy === 'function') loadBusy();
+  if (typeof refreshProjState === 'function') refreshProjState();   // 归档状态徽章
+  if (typeof expClear === 'function') {
+    expClear();
+    expMsg('');
+    if (typeof expProg === 'function') expProg(false);
+    if (typeof expAutoShow === 'function') expAutoShow();
+  }
+}
+
+// 切换项目时，先把各模块的状态文字与结果区清空，避免残留上一个项目的内容
+function clearAllPanels(name) {
+  var tips = ['amsg', 'rmsg', 'tmsg', 'bmsg', 'pmsg2'];
+  tips.forEach(function (id) {
+    var e = document.getElementById(id);
+    if (e) { e.textContent = ''; e.style.color = ''; }
+  });
+  ['autoResult', 'units', 'queue', 'scores', 'summary',
+   'tenders', 'bids', 'tcheck', 'rparse', 'plist', 'groups'].forEach(function (id) {
+    var e = document.getElementById(id);
+    if (e) e.innerHTML = '';
+  });
+  var st = document.getElementById('st');
+  if (st) st.textContent = name ? ('当前项目：' + name) : '未选择项目';
+}
+
+document.getElementById('projSel').onchange = function () {
+  applyProject(this.value);
+  loadSessionHealth();   // 会话目标按项目走，切项目要重查
+};
+
+// ================= 删除项目 =================
+function delMsg(t, bad) {
+  var m = document.getElementById('delMsg');
+  if (!m) return;
+  m.style.color = bad ? 'var(--c-err)' : 'var(--c-mute2)';
+  m.textContent = t || '';
+}
+
+document.getElementById('btnProjDelete').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  var box = document.getElementById('delPanel');
+  box.style.display = 'block';
+  document.getElementById('delProjName').textContent = '项目：' + p.名称;
+  document.getElementById('delConfirm').value = '';
+  delMsg('');
+};
+
+document.getElementById('btnDelCancel').onclick = function () {
+  document.getElementById('delPanel').style.display = 'none';
+  delMsg('');
+};
+
+document.getElementById('btnDelGo').onclick = function () {
+  var p = curProject();
+  if (!p.名称) return;
+  var conf = document.getElementById('delConfirm').value.trim();
+  if (conf !== p.名称) {
+    delMsg('项目名称不一致，已取消', true);
+    return;
+  }
+  var btn = this;
+  btn.disabled = true;
+  delMsg('正在移入回收站…');
+  fetch('/api/project?name=' + encodeURIComponent(p.名称) +
+        '&confirm=' + encodeURIComponent(conf), { method: 'DELETE' })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { delMsg('删除失败：' + r.error, true); return; }
+      delMsg('已移入回收站：' + (r['已移入回收站'] || '').split('\\').pop() +
+             '（' + r['文件数'] + ' 个文件）');
+      setTimeout(function () {
+        document.getElementById('delPanel').style.display = 'none';
+        // 清掉本地记的项目，刷新下拉
+        try { localStorage.removeItem('dsh_current_project'); } catch (e) {}
+        document.getElementById('pname').value = '';
+        loadProjects();
+        clearAllPanels('');
+        boot();
+      }, 1300);
+    })
+    .catch(function (e) {
+      btn.disabled = false;
+      delMsg('删除失败：' + e.message, true);
+    });
+};
+
+// ================= 项目数据重置 =================
+var RESET_SCOPES = [
+  { key: '评分标准', label: '评分标准（评分项、分组、分值）' },
+  { key: '投标文件', label: '投标文件（含扫描页缓存，需重新导入）' },
+  { key: '复核报告', label: '复核报告（复核结果、汇总、导出件）' },
+  { key: '评委打分', label: '评委打分（打分表与比对数据）' },
+  { key: '队列任务', label: '队列任务（取消未完成的任务）' }
+];
+
+function resetMsg(t, bad) {
+  var m = document.getElementById('resetMsg');
+  if (!m) return;
+  m.style.color = bad ? 'var(--c-err)' : 'var(--c-mute2)';
+  m.textContent = t || '';
+}
+
+function openResetPanel() {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  var box = document.getElementById('resetPanel');
+  if (!box) return;
+  box.style.display = 'block';
+  document.getElementById('resetProjName').textContent = '项目：' + p.名称;
+  document.getElementById('resetConfirm').value = '';
+  resetMsg('');
+
+  var sc = document.getElementById('resetScope');
+  sc.innerHTML = '';
+  RESET_SCOPES.forEach(function (x, i) {
+    var id = 'rs_' + i;
+    var lab = el('label', { style: 'display:block;margin:3px 0;cursor:pointer' });
+    var cb = el('input', { type: 'checkbox' });
+    cb.id = id;
+    cb.checked = (x.key !== '队列任务');
+    cb.style.marginRight = '6px';
+    lab.appendChild(cb);
+    lab.appendChild(el('span', { text: x.label }));
+    sc.appendChild(lab);
+  });
+}
+
+document.getElementById('btnProjReset').onclick = openResetPanel;
+
+document.getElementById('btnResetCancel').onclick = function () {
+  document.getElementById('resetPanel').style.display = 'none';
+  resetMsg('');
+};
+
+document.getElementById('btnResetGo').onclick = async function () {
+  var p = curProject();
+  if (!p.名称) { return; }
+  var conf = document.getElementById('resetConfirm').value.trim();
+  if (conf !== p.名称) {
+    resetMsg('项目名称不一致，已取消（请完整输入项目名称）', true);
+    return;
+  }
+  var scope = [];
+  RESET_SCOPES.forEach(function (x, i) {
+    var cb = document.getElementById('rs_' + i);
+    if (cb && cb.checked) scope.push(x.key);
+  });
+  if (!scope.length) { resetMsg('请至少勾选一项', true); return; }
+  if (!(await dlgConfirm('重置项目', '将清空项目「' + p.名称 + '」的：\n' + scope.join('、') +
+      '\n\n（会先自动备份）确定继续？', { danger: true }))) return;
+
+  var btn = this;
+  btn.disabled = true;
+  resetMsg('正在备份并重置…');
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'project_reset',
+      参数: { 项目: p.名称, 范围: scope, 确认: conf } }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { resetMsg('重置失败：' + r.error, true); return; }
+      var parts = [];
+      Object.keys(r['已删除'] || {}).forEach(function (k) {
+        parts.push(k + '：' + r['已删除'][k]);
+      });
+      resetMsg('已重置 —— ' + parts.join('；') +
+               (r['备份目录'] ? '　备份：' + r['备份目录'].split('\\').pop() : ''));
+      setTimeout(function () {
+        document.getElementById('resetPanel').style.display = 'none';
+        applyProject(p.名称);
+      }, 1200);
+    })
+    .catch(function (e) { btn.disabled = false; resetMsg('重置失败：' + e.message, true); });
+};
+
+document.getElementById('btnLoad').onclick = function () {
+  if (!confirm('将重新从磁盘载入评分标准，页面上未保存的修改会丢失。继续？')) return;
+  boot();
+};
+
+function boot() {
+  var pj = curProject().名称;
+  if (!pj) {
+    D = { 项目: { 名称: '', 编号: '' }, 分组: [] };
+    render();
+    msg('请先在「项目信息」里选择或新建项目');
+    var st0 = document.getElementById('st');
+    if (st0) st0.textContent = '未选择项目';
+    return;
+  }
+  fetch('/api/rules' + (pj ? ('?project=' + encodeURIComponent(pj)) : ''))
+    .then(function (r) { return r.json(); }).then(function (r) {
+    D = r;
+    if (!D.分组) D.分组 = [];
+    if (!D.项目) D.项目 = { 名称: '', 编号: '' };
+    document.getElementById('st').textContent = D.更新时间
+      ? ('磁盘版本 ' + D.更新时间) : '磁盘无数据';
+    render(); msg('');
+  }).catch(function (e) {
+    msg('载入失败：' + e.message + '（服务是否已启动？）', 'err');
+  });
+}
+function loadBids() {
+  var pj0 = curProject().名称;
+  var box0 = document.getElementById('bids');
+  if (!pj0) {
+    if (box0) box0.innerHTML = '';
+    var bm0 = document.getElementById('bmsg');
+    if (bm0) bm0.textContent = '';
+    return;
+  }
+  fetch('/api/bids?project=' + encodeURIComponent(pj0))
+    .then(function (r) { return r.json(); }).then(function (list) {
+    var box = document.getElementById('bids');
+    box.innerHTML = '';
+    if (!list.length) {
+      return;
+    }
+    list.forEach(function (x) {
+      var mb = x['大小'] ? (x['大小'] / 1048576).toFixed(1) + ' MB' : '';
+      var done = x['已抽取'] ? '' : '　（尚未抽取，点「开始复核」时自动处理）';
+      box.appendChild(el('div', { class: 'hint ok', text:
+        (x['投标单位'] || '') + '　' + (x['文件'] || '') +
+        '　' + (x['格式'] || '') + (mb ? '　' + mb : '') + done }));
+    });
+  }).catch(function () {});
+}
+
+// U3：归档项目的操作按钮统一禁用，并说明原因（不再"点了才报错"）
+function applyArchivedState() {
+  var a = !!window._projArchived;
+  var b = document.getElementById('btnStartReview');
+  if (b) {
+    if (a) b.disabled = true;
+    b.title = a ? '项目已归档：先点「解档」恢复为进行中，才能再次提交复核' : '';
+  }
+  var sel = document.getElementById('reviewUnitSel');
+  if (sel) {
+    sel.disabled = a;
+    sel.title = a ? '项目已归档：先点「解档」' : '';
+  }
+  var as = document.getElementById('btnAssignSession');
+  if (as) {
+    as.disabled = a;   // L19：幂等赋值，解档时恢复（原来只禁用不恢复）
+    as.title = a ? '项目已归档：先解档再分配会话' : '';
+  }
+}
+
+// U6：全局忙碌条——一眼看出"现在系统在做什么"
+function loadBusy() {
+  var bar = document.getElementById('busyBar');
+  if (!bar) return;
+  var p = (typeof curProject === 'function') ? curProject() : {};
+  var url = '/api/busy' + (p && p.名称
+    ? ('?project=' + encodeURIComponent(p.名称)) : '');
+  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    window._busy = d;
+    if (!d || !d.ok) { bar.textContent = ''; return; }
+    var parts = [];
+    if ((d['提交中'] || []).length) {
+      parts.push('提交中：' + d['提交中'].join('、') + '（预处理）');
+    }
+    if ((d['复核中单位'] || []).length) {
+      parts.push('复核中：' + d['复核中单位'].join('、'));
+    }
+    if (d['待处理']) parts.push('排队 ' + d['待处理'] + ' 个');
+    if (d['预热中']) parts.push('预热 ' + d['预热中'] + ' 项');
+    if (!parts.length) parts.push('空闲');
+    if (d['总单位数'] && (d['未复核'] || []).length) {
+      parts.push('未复核 ' + d['未复核'].length + '/' + d['总单位数'] + ' 家');
+    }
+    bar.textContent = '· ' + parts.join('　·　');
+    var busy = (d['提交中'] || []).length || d['复核中单位'].length || d['待处理'];
+    bar.style.color = busy ? 'var(--c-act)' : 'var(--c-mute)';
+    bar.title = (d['汇总']
+      ? ('汇总：' + (d['汇总时间'] || '已生成') +
+         ((d['未复核'] || []).length
+           ? ('；缺 ' + d['未复核'].join('、')) : '；全部已复核'))
+      : '尚未生成汇总');
+    // U7：「查看汇总」在没汇总时禁用，鼠标悬停说明原因
+    var sv = document.getElementById('btnViewSummary');
+    if (sv) {
+      sv.disabled = !d['汇总'];
+      sv.title = d['汇总']
+        ? ((d['未复核'] || []).length
+           ? ('注意：汇总缺 ' + (d['未复核'] || []).length + ' 家未复核')
+           : '完整汇总（全部已复核）')
+        : '尚未生成汇总：先点「生成汇总」';
+    }
+  }).catch(function () {});
+}
+
+function refreshProjState() {
+  var p = curProject();
+  var box = document.getElementById('projState');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!p.名称) return;
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'project_check', 参数: { 项目: p.名称 } }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) return;
+      var done = r['状态'] === '已归档';
+      window._projArchived = done;          // U3：供按钮禁用判断
+      applyArchivedState();
+      var ab = document.getElementById('btnArchive2');
+      if (ab) {
+        ab.textContent = done ? '解档' : '归档';
+        ab.title = done
+          ? '项目已归档：点击可解档（恢复为进行中，可继续修改）'
+          : '归档前会先检查 6 项条件（单位齐、全部已复核、齐备性、无未完成任务、汇总、结果无异常）';
+      }
+      box.appendChild(el('span', {
+        style: 'display:inline-block;padding:2px 10px;border-radius:10px;' +
+          'font-size:12px;font-weight:700;background:' +
+          (done ? 'var(--c-act-bg)' : 'var(--c-est-bg)') + ';color:' +
+          (done ? 'var(--c-act)' : 'var(--c-est)'),
+        text: done ? ('已归档' + (r['状态'] ? '' : '')) : '进行中' }));
+      if (!done) {
+        var gapN = (r['缺口'] || []).length;
+        box.appendChild(el('span', { style: 'margin-left:8px;font-size:12px;color:var(--c-mute)',
+          text: gapN ? ('归档前还需完成 ' + gapN + ' 项') : '可以归档' }));
+      }
+    }).catch(function () {});
+}
+
+// ================= 专家打分对比 =================
+// 全局状态：提取结果 / 录入数据 / 最近一次比对（导出用）/ 当前项目名
+var EXP = { 提取: null, 录入: null, 比对: null, 项目: '' };
+
+function expMsg(t, bad) {
+  var m = document.getElementById('expMsg');
+  if (!m) return;
+  m.style.color = bad ? 'var(--c-err)' : 'var(--c-mute2)';
+  m.textContent = t || '';
+}
+
+function expClear() {
+  var box = document.getElementById('expResult');
+  if (box) box.innerHTML = '';
+}
+
+// 导出：由调用方传结果
+function expRender(r) {
+  var box = document.getElementById('expResult');
+  if (!box) return;
+  box.innerHTML = '';
+  var ex = r['提取'] || {};
+  var cmp = r['比对'] || {};
+  EXP.比对 = cmp;                       // 供导出使用
+  EXP.项目 = (curProject() || {}).名称 || '';
+  var files = ex['文件'] || [];
+  var experts = cmp['专家'] || ex['专家'] || [];
+
+  // 顶部：导入概况
+  var head = el('div', { style: 'font-size:12px;color:var(--c-mute2);margin:6px 0 10px' });
+  files.forEach(function (f) {
+    var chk = f['校验'] === '通过' ? '　合计校验 通过 ✓'
+            : (f['校验'] ? ('　合计校验 ' + f['校验']) : '');
+    head.appendChild(el('div', { text:
+      '已导入：' + f['文件'] + '　评委：' + (f['专家'] || '—') +
+      '　识别 ' + (f['行数'] || 0) + ' 行' + chk }));
+  });
+  if ((ex['告警'] || []).length) {
+    head.appendChild(el('div', { style: 'color:var(--c-est)',
+      text: '⚠ ' + ex['告警'].join('；') }));
+  }
+  box.appendChild(head);
+
+  var units = cmp['单位'] || [];
+  if (!units.length) {
+    box.appendChild(el('div', { class: 'hint', text: '尚无复核结果可对比' }));
+    return;
+  }
+
+  var cGreen = 'var(--c-act)';
+  var cRed = '#c0392b';
+  var cMute = 'var(--c-mute)';
+
+  units.forEach(function (u) {
+    var t = u['总分'] || {};
+    var bad = t['结论'] === '不一致';
+    var card = el('div', { style: 'border:1px solid var(--c-line);border-radius:8px;' +
+      'padding:10px 12px;margin-bottom:12px;background:#fff' });
+
+    var title = el('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' });
+    title.appendChild(el('span', { style: 'font-weight:700;font-size:13px',
+      text: u['投标人'] }));
+    title.appendChild(el('span', { style: 'font-size:12px;color:var(--c-mute2)',
+      text: '总分　系统 ' + (t['系统'] === null ? '—' : t['系统']) +
+            '　专家 ' + (t['专家'] === null ? '—' : t['专家']) +
+            '　差异 ' + (t['差异'] === null ? '—'
+              : (t['差异'] > 0 ? '+' : '') + t['差异']) }));
+    title.appendChild(el('span', { style: 'font-size:12px;font-weight:700;color:' +
+      (bad ? cRed : cGreen), text: '结论 ' + (t['结论'] || '—') }));
+    card.appendChild(title);
+
+    var th = 'text-align:left;padding:5px;border-bottom:2px solid var(--c-line2);' +
+             'font-size:12px;color:var(--c-mute2)';
+    var tr0 = el('tr', {}, [
+      el('th', { style: th, text: '序号' }),
+      el('th', { style: th, text: '评分项' }),
+      el('th', { style: th, text: '分值' }),
+      el('th', { style: th, text: '系统评分' }),
+      el('th', { style: th, text: '专家打分' }),
+      el('th', { style: th, text: '差异' }),
+      el('th', { style: th, text: '结论' })
+    ]);
+    var tb = el('tbody', {});
+    (u['明细'] || []).forEach(function (row) {
+      var same = row['结论'] === '一致';
+      var none = row['结论'] === '无专家分';
+      var col = none ? cMute : (same ? cGreen : cRed);
+      var d = row['差异'];
+      tb.appendChild(el('tr', { style: 'border-bottom:1px solid var(--c-line)' }, [
+        el('td', { style: 'padding:5px', text: String(row['序号'] || '') }),
+        el('td', { style: 'padding:5px', text: (row['名称'] || '') }),
+        el('td', { style: 'padding:5px;color:var(--c-mute)', text: String(row['分值'] || '') }),
+        el('td', { style: 'padding:5px;font-weight:600',
+          text: (row['系统评分'] === null ? '—' : String(row['系统评分'])) }),
+        el('td', { style: 'padding:5px;font-weight:600',
+          text: (row['专家打分'] === null ? '—' : String(row['专家打分'])) }),
+        el('td', { style: 'padding:5px', text: (d === null ? '—'
+          : (d > 0 ? '+' : '') + d) }),
+        el('td', { style: 'padding:5px;font-weight:700;color:' + col,
+          text: row['结论'] })
+      ]));
+    });
+    card.appendChild(el('table', { style: 'width:100%;border-collapse:collapse;' +
+      'font-size:13px;margin-top:8px' }, [el('thead', {}, [tr0]), tb]));
+
+    var stat = '一致 ' + (u['一致项数'] || 0) + ' 项　不一致 ' +
+               (u['不一致项数'] || 0) + ' 项';
+    if (u['无专家分项数']) stat += '　无专家分 ' + u['无专家分项数'] + ' 项';
+    card.appendChild(el('div', { style: 'font-size:12px;color:var(--c-mute2);margin-top:6px',
+      text: stat }));
+    box.appendChild(card);
+  });
+}
+
+function expProg(show, pct, stage, done) {
+  var box = document.getElementById('expProgBox');
+  var bar = document.getElementById('expProgBar');
+  var num = document.getElementById('expProgPct');
+  var st = document.getElementById('expProgStage');
+  if (!box) return;
+  box.style.display = show ? 'block' : 'none';
+  if (pct !== undefined && pct !== null) {
+    var v = Math.max(0, Math.min(100, Math.round(pct)));
+    if (bar) bar.style.width = v + '%';
+    if (num) num.textContent = v + '%';
+    if (bar) bar.style.background = (v >= 100)
+      ? (done === false ? 'var(--c-err)' : 'var(--c-act)') : 'var(--c-info)';
+  }
+  if (st && stage !== undefined) st.textContent = stage || '';
+}
+
+document.getElementById('btnExpImport').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  var inp = document.getElementById('expFile');
+  var f = inp.files[0];
+  if (!f) { alert('请选择打分表文件'); return; }
+
+  var btn = this;
+  btn.disabled = true;
+  expClear();
+  expMsg('');
+  expProg(true, 5, '上传打分表…', true);
+
+  fetch('/api/expert?project=' + encodeURIComponent(p.名称) +
+        '&name=' + encodeURIComponent(f.name), { method: 'POST', body: f })
+    .then(function (r) { return r.json(); })
+    .then(function (up) {
+      if (!up.ok) throw new Error(up.error || '上传失败');
+      // 内容相同的文件已存在，且已有解析结果 → 直接显示，不重复解析
+      if (up['重复'] && up['已有结果']) {
+        expProg(true, 60, '该打分表已导入过，正在读取已有结果…', true);
+        return fetch('/api/run', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 任务: 'expert_load',
+            参数: { 项目: p.名称 } }) })
+          .then(function (r) { return r.json(); })
+          .then(function (ld) {
+            return fetch('/api/run', { method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 任务: 'expert_compare',
+                参数: { 项目: p.名称 } }) })
+              .then(function (r) { return r.json(); })
+              .then(function (cmp) {
+                expProg(true, 100, '完成：该表此前已解析，直接显示比对', true);
+                expMsg('内容相同的打分表已存在（' + up['文件'] +
+                       '），未重复保存，也未重复解析');
+                btn.disabled = false;
+                inp.value = '';
+                expRender({ 提取: { 专家: (ld['录入'] || {})['专家'] || [],
+                                    文件: [] },
+                            比对: cmp });
+                return { ok: true, 已完成: true };   // G12：早退分支返回哨兵
+              });
+          });
+      }
+      expProg(true, 12, (up['重复'] ? '文件已存在，复用；' : '') +
+              '正在唤醒 AI 解析…', true);
+      return fetch('/api/run', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 任务: 'expert_submit',
+          参数: { 项目: p.名称, 文件: up['文件'] } }) })
+        .then(function (r) { return r.json(); });
+    })
+    .then(function (r) {
+      if (r && r['已完成']) return;   // G12：早退分支已完成，不再走轮询
+      if (!r.ok) throw new Error(r.error || '提交失败');
+      var tid = r['任务'];
+      expProg(true, 20, 'AI 正在解析打分表（任务 ' + tid + '）…' +
+              (r['已唤醒'] ? '' : '　⚠ 唤醒未生效'), true);
+      // 轮询
+      var t0 = Date.now();
+      var stage = 20;
+      var timer = setInterval(function () {
+        var el2 = Date.now() - t0;
+        if (el2 > 180000) {   // L20：3 分钟超时兜底，避免卡在 92%、按钮永久禁用
+          clearInterval(timer);
+          btn.disabled = false;
+          expProg(true, 100, '解析超时（可能唤醒失败），请查看任务或重试', false);
+          return;
+        }
+        stage = Math.min(92, 20 + Math.round(el2 / 900));   // 缓慢爬升，避免假进度
+        expProg(true, stage, 'AI 正在解析打分表…已等待 ' +
+                Math.round(el2 / 1000) + ' 秒', true);
+        fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 任务: 'expert_status',
+            参数: { 项目: p.名称, 任务: tid } }) })
+          .then(function (x) { return x.json(); })
+          .then(function (x) {
+            if (!x.ok) {   // L20：明确失败 → 停并提示，不再无限轮询
+              clearInterval(timer);
+              btn.disabled = false;
+              expProg(true, 100, '解析失败', false);
+              expMsg('解析失败：' + (x.error || '未知错误'), true);
+              return;
+            }
+            if (!x['完成']) return;
+            clearInterval(timer);
+            btn.disabled = false;
+            inp.value = '';
+            if (x['错误']) {
+              expProg(true, 100, '解析失败', false);
+              expMsg('解析失败：' + x['错误'], true);
+              return;
+            }
+            expProg(true, 100, '完成：已解析并比对', true);
+            expMsg('评委：' + ((x['专家'] || []).join('、') || '—'));
+            expRender({ 提取: { 专家: x['专家'] || [], 文件: [] },
+                        比对: x['比对'] || {} });
+          }).catch(function (e) {   // L20：网络失败 → 停，别卡死
+            clearInterval(timer);
+            btn.disabled = false;
+            expProg(true, 100, '查询进度失败', false);
+            expMsg('查询解析进度失败：' + e.message, true);
+          });
+      }, 1500);
+    })
+    .catch(function (e) {
+      expProg(true, 100, '失败', false);
+      expMsg('失败：' + e.message, true);
+      btn.disabled = false;
+    });
+};
+
+document.getElementById('btnExpReset').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  var del = confirm(
+    '重置将清空本项目的专家打分比对数据（已解析的分数与比对结果）。\n\n' +
+    '点「确定」继续；随后会再问是否连已上传的打分表一起删除。');
+  if (!del) return;
+  var delFile = confirm('是否同时删除已上传的打分表文件？\n\n' +
+    '确定＝一并删除（下次需重新上传）\n取消＝保留文件，可直接再次导入');
+  expProg(true, 40, '正在重置…', true);
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'expert_reset',
+      参数: { 项目: p.名称, 删除打分表: !!delFile } }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        expProg(true, 100, '重置失败', false);
+        expMsg('重置失败：' + r.error, true);
+        return;
+      }
+      expClear();
+      expProg(false);
+      var parts = [];
+      if ((r['已清除'] || []).length) parts.push('已清除 ' + r['已清除'].length + ' 项');
+      if ((r['已取消任务'] || []).length) parts.push('取消任务 ' + r['已取消任务'].length + ' 个');
+      expMsg('已重置' + (parts.length ? '：' + parts.join('，') : '') +
+             '　可重新导入打分表');
+      document.getElementById('expFile').value = '';
+    })
+    .catch(function (e) {
+      expProg(true, 100, '重置失败', false);
+      expMsg('重置失败：' + e.message, true);
+    });
+};
+
+// ---------------- 导出比对结果 ----------------
+function expNow() {
+  var d = new Date();
+  function p(x) { return (x < 10 ? '0' : '') + x; }
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' +
+         p(d.getHours()) + p(d.getMinutes());
+}
+
+function expBuildMd(cmp, experts) {
+  var L = [];
+  L.push('# 专家打分比对结果');
+  L.push('');
+  L.push('- 项目：' + (EXP.项目 || ''));
+  L.push('- 评委：' + ((experts || []).join('、') || '—'));
+  L.push('- 导出时间：' + new Date().toLocaleString());
+  L.push('');
+  L.push('## 一、汇总');
+  L.push('');
+  L.push('| 投标人 | 系统总分 | 专家总分 | 差异 | 一致项 | 不一致项 | 结论 |');
+  L.push('|---|---|---|---|---|---|---|');
+  (cmp['单位'] || []).forEach(function (u) {
+    var t = u['总分'] || {};
+    L.push('| ' + u['投标人'] + ' | ' + (t['系统'] === null ? '—' : t['系统']) +
+           ' | ' + (t['专家'] === null ? '—' : t['专家']) +
+           ' | ' + (t['差异'] === null ? '—'
+             : (t['差异'] === 0 ? '0.0'
+                : ((t['差异'] > 0 ? '+' : '') + t['差异']))) +
+           ' | ' + (u['一致项数'] || 0) + ' | ' + (u['不一致项数'] || 0) +
+           ' | **' + (t['结论'] || '—') + '** |');
+  });
+  L.push('');
+  L.push('## 二、分家明细');
+  (cmp['单位'] || []).forEach(function (u) {
+    var t = u['总分'] || {};
+    L.push('');
+    L.push('### ' + u['投标人']);
+    L.push('');
+    L.push('总分：系统 ' + (t['系统'] === null ? '—' : t['系统']) +
+           '　专家 ' + (t['专家'] === null ? '—' : t['专家']) +
+           '　差异 ' + (t['差异'] === null ? '—'
+             : ((t['差异'] > 0 ? '+' : '') + t['差异'])) +
+           '　结论：**' + (t['结论'] || '—') + '**');
+    L.push('');
+    L.push('| 序号 | 评分项 | 分值 | 系统评分 | 专家打分 | 差异 | 结论 |');
+    L.push('|---|---|---|---|---|---|---|');
+    (u['明细'] || []).forEach(function (row) {
+      var d = row['差异'];
+      L.push('| ' + (row['序号'] || '') + ' | ' + (row['名称'] || '') +
+             ' | ' + (row['分值'] === undefined ? '' : row['分值']) +
+             ' | ' + (row['系统评分'] === null ? '—' : row['系统评分']) +
+             ' | ' + (row['专家打分'] === null ? '—' : row['专家打分']) +
+             ' | ' + (d === null ? '—' : (d === 0 ? '0.0' : ((d > 0 ? '+' : '') + d))) +
+             ' | ' + row['结论'] + ' |');
+    });
+  });
+  L.push('');
+  L.push('> 说明：商务部分均为客观分；结论按「系统评分 = 专家打分」判定一致/不一致。');
+  L.push('');
+  return L.join('\n');
+}
+
+function expBuildCsv(cmp) {
+  var rows = [];
+  rows.push(['投标人', '序号', '评分项', '分值', '系统评分', '专家打分', '差异', '结论']);
+  (cmp['单位'] || []).forEach(function (u) {
+    (u['明细'] || []).forEach(function (row) {
+      rows.push([u['投标人'], row['序号'], row['名称'], row['分值'],
+                 row['系统评分'], row['专家打分'], row['差异'], row['结论']]);
+    });
+  });
+  return rows.map(function (r) {
+    return r.map(function (c) {
+      var v = (c === null || c === undefined) ? '' : String(c);
+      return /[",\n]/.test(v) ? ('"' + v.replace(/"/g, '""') + '"') : v;
+    }).join(',');
+  }).join('\r\n');
+}
+
+document.getElementById('btnExpExport').onclick = function () {
+  var cmp = EXP.比对;
+  if (!cmp || !(cmp['单位'] || []).length) {
+    alert('还没有可导出的比对结果，请先导入打分表');
+    return;
+  }
+  var experts = cmp['专家'] || [];
+  var base = '专家打分比对_' + expNow();
+  var md = expBuildMd(cmp, experts);
+  var csv = '\ufeff' + expBuildCsv(cmp);
+
+  // 优先：系统「另存为」，由用户选择保存位置
+  if (window.showSaveFilePicker) {
+    window.showSaveFilePicker({
+      suggestedName: base + '.md',
+      types: [
+        { description: 'Markdown 文件', accept: { 'text/markdown': ['.md'] } },
+        { description: 'CSV 文件（Excel 可打开）',
+          accept: { 'text/csv': ['.csv'] } }
+      ]
+    }).then(function (handle) {
+      var isCsv = /\.csv$/i.test(handle.name || '');
+      return handle.createWritable().then(function (w) {
+        return w.write(isCsv ? csv : md).then(function () { return w.close(); });
+      }).then(function () {
+        expMsg('已导出：' + handle.name);
+      });
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') { return; }   // 用户取消
+      // 某些环境不允许写：退化为下载
+      expDownload(base + '.md', md, 'text/markdown');
+      expMsg('已按浏览器默认位置下载');
+    });
+    return;
+  }
+  expDownload(base + '.md', md, 'text/markdown');
+  expMsg('当前浏览器不支持选择保存位置，已下载到默认下载目录');
+};
+
+function expDownload(name, text, mime) {
+  var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () {
+    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+  }, 1000);
+}
+
+// 进入页面时若有既往录入，自动显示比对
+function expAutoShow() {
+  var p = curProject();
+  if (!p || !p.名称) return;
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'expert_compare', 参数: { 项目: p.名称 } }) })
+    .then(function (r) { return r.json(); }).then(function (r) {
+      if (!r.ok || !(r['专家'] || []).length) return;
+      expRender({ 提取: { 专家: r['专家'], 文件: [] }, 比对: r });
+    }).catch(function (e) {
+      var b = document.getElementById('expResult');
+      if (b) {
+        b.innerHTML = '';
+        b.appendChild(el('div', { class: 'hint',
+          text: '比对结果显示失败：' + (e && e.message ? e.message : e) }));
+      }
+    });
+}
+
+document.getElementById('btnArchive2').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  var m = document.getElementById('amsg');
+  m.style.color = '#5a6675';
+  m.textContent = '正在检查归档条件…';
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'project_check', 参数: { 项目: p.名称 } }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) { m.style.color = 'var(--c-err)'; m.textContent = '检查失败：' + r.error; return; }
+      if (r['状态'] === '已归档') {
+        if (!confirm('项目已归档。要重新打开（解档）继续修改吗？')) { m.textContent = ''; return; }
+        var why = prompt('解档原因（可留空）：') || '';
+        return fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 任务: 'project_reopen', 参数: { 项目: p.名称, 原因: why } }) })
+          .then(function (x) { return x.json(); })
+          .then(function (x) {
+            m.style.color = x.ok ? 'var(--c-act)' : 'var(--c-err)';
+            m.textContent = x.ok ? '已解档，项目回到进行中' : ('解档失败：' + x.error);
+            refreshProjState();
+          });
+      }
+      if (!r['可归档']) {
+        m.style.color = 'var(--c-est)';
+        m.textContent = '暂不能归档：' + (r['缺口'] || []).join('；');
+        return;
+      }
+      var und = Object.keys(r['未决项'] || {});
+      var msg = '归档将锁定本项目：\n\n' +
+        '· 单位 ' + r['单位数'] + ' 家，全部已复核\n' +
+        '· 汇总 ' + (r['汇总字节'] ? (Math.round(r['汇总字节'] / 1024) + ' KB') : '—') + '\n' +
+        (und.length ? ('· 未决项：' + und.join('、') + '（归档清单中会列明）\n') : '') +
+        '\n归档后可随时解档。确定归档吗？';
+      if (!confirm(msg)) { m.textContent = ''; return; }
+      var note = prompt('归档备注（可留空）：') || '';
+      m.textContent = '正在归档…';
+      return fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 任务: 'project_archive',
+          参数: { 项目: p.名称, 备注: note, 允许未决: und.length > 0 } }) })
+        .then(function (x) { return x.json(); })
+        .then(function (x) {
+          m.style.color = x.ok ? 'var(--c-act)' : 'var(--c-err)';
+          if (x.ok) {
+            var s = '已归档：' + x['归档时间'] + '，清单 ' + x['清单'];
+            // 会话说明由服务端给整句，避免把「（本项目无专属会话）」塞进括号里出现双层括号，
+            // 也不再谎称"下次复核将用新会话"（自动建会话关着时会回落到默认会话）
+            if (x['会话说明']) {
+              s += '；' + x['会话说明'];
+            } else if (x['会话已结项']) {
+              s += '；专属会话已退出映射，下次复核回落默认会话';
+            }
+            m.textContent = s;
+          } else {
+            m.textContent = '归档失败：' + x.error;
+          }
+          refreshProjState();
+          loadProjectList();
+          loadSessionHealth();
+        });
+    }).catch(function (e) { m.textContent = '检查失败：' + e.message; });
+};
+
+document.getElementById('btnUp').onclick = function () {
+  var f = document.getElementById('bfile').files[0];
+  var m = document.getElementById('bmsg');
+  var p = curProject();
+  if (!p.名称) { alert('请先在「项目信息」里填写项目名称'); return; }
+  var bd = document.getElementById('bidder').value.trim();
+  if (!bd) { alert('请填写投标单位名称（用于建文件夹）'); return; }
+  if (!f) { alert('请先选择投标文件（.doc / .docx / .pdf）'); return; }
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '保存中…';
+  fetch('/api/bid?name=' + encodeURIComponent(f.name) +
+        '&project=' + encodeURIComponent(p.名称) +
+        '&bidder=' + encodeURIComponent(bd), { method: 'POST', body: f })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        m.style.color = 'var(--c-err)';
+        m.textContent = '保存失败：' + r.error;
+        return;
+      }
+      var x = r['结果'] || {};
+      var mb = x['大小'] ? (x['大小'] / 1048576).toFixed(1) + ' MB' : '';
+      m.style.color = 'var(--c-act)';
+      m.textContent = '保存成功：' + (x['投标单位'] || bd) + '　' +
+        (x['文件'] || f.name) + '（' + (x['格式'] || '') +
+        (mb ? '，' + mb : '') + '）';
+      loadBids();
+      loadUnits();
+      loadOcrUnits();
+    })
+    .catch(function (e) {
+      m.style.color = 'var(--c-err)';
+      m.textContent = '保存失败：' + e.message;
+    });
+};
+
+function parseRules(done) {
+  var m = document.getElementById('rmsg');
+  var box = document.getElementById('rparse');
+  m.textContent = '解析中…';
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'parse_rules',
+      参数: { 项目: (D.项目 || {}).名称 || document.getElementById('pname').value.trim() } })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) {
+      m.style.color = 'var(--c-err)';
+      m.textContent = '解析失败：' + r.error;
+      if (done) done(null);
+      return;
+    }
+    m.style.color = 'var(--c-mute2)';
+    m.textContent = '共 ' + r['评分项数'] + ' 项 / ' + r['总分'] + ' 分　·　' +
+      '规则可复算 ' + r['规则可复算项数'] + ' 项 / ' + r['规则可复算分'] +
+      ' 分　·　需读文判定 ' + r['需读文项数'] + ' 项 / ' + r['需读文分'] +
+      ' 分（由复核 agent 判定，不需要人工）';
+    box.innerHTML = '';
+    (r['结果'] || []).forEach(function (x) {
+      var c = x['挖出条件'] || {};
+      var bits = [];
+      if (c['时间窗口起']) bits.push('时间窗口≥' + c['时间窗口起']);
+      if (c['金额门槛万元']) bits.push('金额≥' + c['金额门槛万元'] + '万');
+      if (c['单项分'] !== undefined) bits.push('单项' + c['单项分'] + '分');
+      if (c['封顶'] !== undefined) bits.push('封顶' + c['封顶'] + '分');
+      if ((c['类型关键词'] || []).length) bits.push('关键词：' + c['类型关键词'].join('、'));
+      if ((c['分级档位'] || []).length) bits.push('分级 ' + c['分级档位'].length + ' 档');
+      var read = (x['需读字段'] || []);
+      box.appendChild(el('div', {
+        class: 'hint ' + (x['判定方'] === '规则可复算' ? 'ok' : ''),
+        text: (x['序号'] || '') + ' ' + (x['名称'] || '') + '（' + x['分值'] + '分）　' +
+          (x['判定方式'] || x['模式'] || '') +
+          (read.length ? '　需读：' + read.join('、') : '') +
+          (bits.length ? '　▸ ' + bits.join('；') : '')
+      }));
+    });
+    if (done) done(r);
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '解析失败：' + e.message;
+    if (done) done(null);
+  });
+}
+function _postTask(task, params, msgEl, okText) {
+  var m = document.getElementById(msgEl);
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '处理中…';
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: task, 参数: params })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) { m.style.color = 'var(--c-err)'; m.textContent = '失败：' + r.error; return; }
+    m.style.color = 'var(--c-act)';
+    m.textContent = okText(r);
+    if (task === 'archive') loadScores();
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '失败：' + e.message;
+  });
+}
+
+document.getElementById('btnArchive').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  _postTask('archive', { 项目: p.名称 }, 'amsg', function (r) {
+    var miss = r['未复核'] || [];
+    if (miss.length) {
+      return '已生成汇总（已复核 ' + r['单位数'] + ' / 共 ' +
+        (r['总单位数'] || r['单位数']) + ' 家）：' + r['文件'] +
+        '　⚠ 未复核：' + miss.join('、') + '（汇总里已单列，不能直接当完整报告交付）';
+    }
+    return '已生成汇总（' + r['单位数'] + ' 家，全部已复核）：' + r['文件'];
+  });
+};
+
+
+document.getElementById('btnGenPoints').onclick = function () {
+  var p = curProject();
+  if (!p.名称) { alert('请先选择项目'); return; }
+  _postTask('gen_points', { 项目: p.名称 }, 'amsg', function (r) {
+    return '已生成要点骨架（' + r['评分项数'] + ' 项 / ' + r['总分'] +
+      ' 分）：' + r['文件'] + '　' + (r['说明'] || '');
+  });
+};
+
+function showDoc(name, title) {
+  var p = curProject();
+  var m = document.getElementById('amsg');
+  if (!p.名称) { alert('请先选择项目'); return; }
+  fetch('/api/doc?project=' + encodeURIComponent(p.名称) +
+        '&name=' + encodeURIComponent(name))
+    .then(function (r) { return r.json(); }).then(function (r) {
+      if (!r.ok) {
+        m.style.color = 'var(--c-err)';
+        m.textContent = name + '：' + r.error;
+        return;
+      }
+      var w = window.open('', '_blank');
+      if (!w) { alert('浏览器拦截了新窗口，请允许弹窗'); return; }
+      var esc = String(r['内容']).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      w.document.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">' +
+        '<title>' + title + '</title><style>' +
+        'body{font:14px/1.7 "Microsoft YaHei",sans-serif;color:#1f2733;' +
+        'background:#f4f6fa;margin:0;padding:24px}' +
+        'pre{background:#fff;border:1px solid var(--c-line2);border-radius:10px;' +
+        'padding:18px 20px;white-space:pre-wrap;word-break:break-word;' +
+        'max-width:1100px;margin:0 auto;font:13px/1.75 Consolas,"Microsoft YaHei",monospace}' +
+        'h2{max-width:1100px;margin:0 auto 12px;font-size:15px;color:var(--c-info)}' +
+        'p.m{max-width:1100px;margin:0 auto 14px;color:var(--c-mute);font-size:12px}' +
+        'div.bar{max-width:1100px;margin:0 auto 14px;display:flex;align-items:center;' +
+        'gap:8px;background:#fff;border:1px solid var(--c-line2);border-radius:8px;padding:8px 12px;' +
+        'font-size:13px}' +
+        'div.bar select{padding:4px 8px;border:1px solid #cbd5e1;border-radius:6px;' +
+        'font:13px "Microsoft YaHei",sans-serif;color:#1f2733}' +
+        'div.bar a{color:var(--c-info)}' +
+        '</style></head><body><h2>' + title + '</h2>' +
+        '<p class="m">' + r['文件'] + '　' + r['字节'] + ' 字节</p>' +
+        (name === '复核结果汇总.md' ?
+          '<div class="bar"><label>导出：</label>' +
+          '<select id="expSel">' +
+          '<option value="">选择格式</option>' +
+          '<option value="pdf">导出 PDF</option>' +
+          '<option value="docx">导出 DOCX</option>' +
+          '<option value="md">导出 Markdown</option>' +
+          '</select><span id="expMsg"></span></div>' +
+          '<script>' +
+          'var _P=' + JSON.stringify(p.名称) + ';' +
+          'document.getElementById("expSel").onchange=function(){' +
+          'var fmt=this.value;if(!fmt)return;var msg=document.getElementById("expMsg");' +
+          'msg.textContent="正在导出 "+fmt.toUpperCase()+"…";' +
+          'fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},' +
+          'body:JSON.stringify({"任务":"export","参数":{"项目":_P,"格式":fmt}})}' +
+          ').then(function(r){return r.json()}).then(function(j){' +
+          'if(!j.ok){msg.textContent="导出失败："+j.error;return;}' +
+          'var fn="复核结果汇总."+fmt;' +
+          'var a=document.createElement("a");' +
+          'a.href="/api/download?project="+encodeURIComponent(_P)+"&file="+encodeURIComponent(fn)+' +
+          '"&name="+encodeURIComponent(_P+"_"+fn);' +
+          'a.textContent="下载 "+_P+"_"+fn;msg.innerHTML="";' +
+          'msg.appendChild(document.createTextNode("已导出（"+Math.round((j["字节"]||0)/1024)+" KB）："));' +
+          'msg.appendChild(a);' +
+          '}).catch(function(e){msg.textContent="导出失败："+e.message;});' +
+          'this.value="";' +
+          '};' +
+          '<\/script>' : '') +
+        '<pre>' + esc + '</pre></body></html>');
+      w.document.close();
+      m.style.color = 'var(--c-act)';
+      m.textContent = '已打开：' + name;
+    }).catch(function (e) {
+      m.style.color = 'var(--c-err)';
+      m.textContent = '读取失败：' + e.message;
+    });
+}
+
+document.getElementById('btnViewPoints').onclick = function () {
+  showDoc('项目要点.md', '项目要点');
+};
+document.getElementById('btnViewSummary').onclick = function () {
+  var d = window._busy || {};
+  if (!d['汇总']) {
+    alert('尚未生成汇总：请先点「生成汇总」。');
+    return;
+  }
+  var miss = d['未复核'] || [];
+  if (miss.length && !confirm('注意：本汇总缺 ' + miss.length + ' 家未复核：\n' +
+      miss.join('、') + '\n\n汇总里已单列这些单位，不能直接当完整报告交付。\n\n仍要查看吗？')) {
+    return;
+  }
+  showDoc('复核结果汇总.md', '复核结果汇总');
+};
+
+document.getElementById('btnReloadScores').onclick = function () { loadScores(); loadEngine(); loadVersion(); loadSessionHealth(); };
+
+// 界面声明自己需要的接口契约号：只有端点/字段不兼容时才需要跟着改
+var UI_REQUIRES_API = 1;
+
+// 顶部版本号：一眼看出「服务端是否待重启」「界面与服务端契约是否匹配」
+function loadVersion() {
+  var el0 = document.getElementById('verBadge');
+  if (!el0) return;
+  fetch('/api/version').then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) { el0.textContent = ''; return; }
+    var ver = d['版本'] || '?';
+    var api = (d['接口契约'] == null) ? null : d['接口契约'];
+    var apiBad = (api != null && api < UI_REQUIRES_API);   // 界面要的比服务端新
+    var restart = !!d['服务端需重启'];                      // 代码改了没重启
+
+    var txt = 'v' + ver;
+    if (apiBad) txt += '　界面/服务端不匹配';
+    else if (restart) txt += '　服务端待重启';
+    el0.textContent = txt;
+    el0.style.color = apiBad ? '#c0392b' : (restart ? '#b45309' : '#1e7e34');
+    el0.style.fontWeight = (apiBad || restart) ? '700' : '';
+
+    var tip = [];
+    tip.push('版本：' + ver);
+    tip.push('接口契约：' + (api == null ? '（服务端未提供）' : api)
+      + (apiBad ? '　← 界面需要 ' + UI_REQUIRES_API : ''));
+    if (d['服务端构建']) tip.push('服务端构建：' + d['服务端构建']);
+    if (d['界面构建']) tip.push('界面构建：' + d['界面构建']);
+    if (d['进程']) tip.push('进程：' + d['进程'] + '（Python ' + (d['Python'] || '') + '）');
+    if (d['进程启动']) tip.push('启动：' + d['进程启动']);
+    if (d['已运行秒'] != null) tip.push('已运行：' + Math.round(d['已运行秒']) + ' 秒');
+    if (apiBad) {
+      tip.push('⚠ 界面需要更新的服务端接口：请运行 stop_server.cmd → start_server.cmd');
+    } else if (restart) {
+      tip.push('⚠ ' + (d['服务端提示'] || '服务端代码已更新，请重启服务'));
+    } else {
+      tip.push('界面与服务端均为最新');
+    }
+    el0.title = tip.join('\n');
+  }).catch(function () { el0.textContent = ''; });
+}
+
+// U4：提交结果回显——刷新页面后仍能看到"上次提交未完成/失败"
+function loadSubmitLast() {
+  var box = document.getElementById('submitLast');
+  if (!box) return;
+  var p = (typeof curProject === 'function') ? curProject() : {};
+  if (!p || !p.名称) { box.style.display = 'none'; box.textContent = ''; return; }
+  fetch('/api/submit/last?project=' + encodeURIComponent(p.名称))
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.ok) { box.style.display = 'none'; return; }
+      var left = d['遗留未完成'] || [];
+      var recent = d['最近'] || [];
+      var parts = [];
+      if (left.length) {
+        parts.push('⚠ 上次提交未完成（预处理被打断）：' +
+          left.map(function (x) { return x['投标单位'] || '?'; }).join('、') +
+          '　请重新点「开始复核」提交。');
+      }
+      var failed = recent.filter(function (x) { return x['结果'] === '失败'; });
+      if (failed.length) {
+        var f0 = failed[0];
+        parts.push('上次提交失败：' + (f0['说明'] || '原因未记录') +
+          '（' + (f0['时间'] || '') + '）');
+      }
+      if (!parts.length) { box.style.display = 'none'; box.textContent = ''; return; }
+      box.style.display = '';
+      box.style.color = 'var(--c-est)';
+      box.textContent = parts.join('　｜　');
+    }).catch(function () { box.style.display = 'none'; });
+}
+
+// 会话徽标：显示「本项目」的会话状态。
+//   已映射 → 该会话的占用（绿/黄/红）
+//   未分配 → 灰色「会话 未分配」，不给默认会话的数字，避免被误当成本项目的
+//   已结项 → 灰色「会话 已结项」，并说明当前回落到默认会话
+function loadSessionHealth() {
+  var el0 = document.getElementById('sessBadge');
+  if (!el0) return;
+  var p = (typeof curProject === 'function') ? curProject() : {};
+  var qs = p && p.名称 ? ('?project=' + encodeURIComponent(p.名称)) : '';
+  if (!qs) {                      // 还没选项目：会话状态不显示，避免误报"未分配"
+    el0.textContent = '';
+    el0.title = '请先选择项目';
+    return;
+  }
+  fetch('/api/session/health' + qs).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok || !d['目标会话']) { el0.textContent = ''; return; }
+    var pct = d['上下文占比'];
+    var mb = d['transcriptMB'];
+    var mapped = !!d['项目已映射'];
+    var retired = !!d['项目已结项'];
+    var tip = [];
+
+    if (retired) {
+      el0.textContent = '会话 已结项';
+      el0.style.color = '#8b96a5';
+      el0.style.fontWeight = '';
+      tip.push('项目：' + (d['项目'] || '') + '（已结项）');
+      tip.push(d['结项来源'] === '项目信息.状态=已归档'
+        ? '该项目在会话映射上线前就已归档，从来没绑定过专属会话；当前唤醒落到默认会话：'
+        : '本项目专属会话已退出，当前唤醒回落到默认会话：');
+      tip.push('  ' + (d['标题'] || '') + '（' + d['目标会话'] + '）');
+      if (pct != null) tip.push('  默认会话占用：' + pct.toFixed(1) + '%'
+        + (mb != null ? ' / ' + mb.toFixed(1) + ' MB' : ''));
+      if (d['模型']) {
+        tip.push('默认会话模型：' + d['模型']
+          + (d['推理强度'] ? '（' + d['推理强度'] + '）' : ''));
+      }
+      tip.push('若该项目要重新复核：先「解档」，再点「分配会话」');
+    } else if (!mapped) {
+      el0.textContent = '会话 未分配';
+      el0.style.color = '#b45309';
+      el0.style.fontWeight = '';
+      tip.push('项目：' + (d['项目'] || '') + '（未分配专属会话）');
+      tip.push('第一次点「开始复核」会自动新建并绑定；也可手动点「分配会话」');
+      tip.push('在分配之前，唤醒会投给默认会话：');
+      tip.push('  ' + (d['标题'] || '') + '（' + d['目标会话'] + '）');
+      if (pct != null) tip.push('  默认会话占用：' + pct.toFixed(1) + '%'
+        + (mb != null ? ' / ' + mb.toFixed(1) + ' MB' : '') + '（不是本项目的）');
+    } else {
+      var txt = '会话';
+      if (pct != null) txt += ' ' + pct.toFixed(1) + '%';
+      if (mb != null) txt += ' / ' + mb.toFixed(1) + 'MB';
+      if (d['模型']) {
+        txt += ' · ' + d['模型'] + (d['推理强度'] ? '(' + d['推理强度'] + ')' : '');
+      }
+      el0.textContent = txt;
+      var st = d['状态'] || '';
+      el0.style.color = (st === '建议更换') ? '#c0392b'
+        : (st === '注意' ? '#b45309' : '#1e7e34');
+      el0.style.fontWeight = '';
+      tip.push('项目：' + (d['项目'] || '') + '（专属会话）');
+      tip.push('唤醒目标：' + (d['标题'] || '') + '（' + d['目标会话'] + '）');
+      tip.push('来源：' + (d['来源'] || ''));
+      if (d['模型']) {
+        tip.push('模型：' + d['模型']
+          + (d['推理强度'] ? '（推理强度 ' + d['推理强度'] + '）' : '')
+          + (d['服务商'] ? '　服务商 ' + d['服务商'] : ''));
+        tip.push('　来源：' + (d['模型来源'] || ''));
+        tip.push('　改模型：在桌面端本会话的模型下拉里切一次即可（我们没有设置模型的接口）');
+      } else if (d['模型来源']) {
+        tip.push('模型：' + d['模型来源']);
+      }
+      if (d['上下文压力'] != null) {
+        tip.push('上下文：' + d['上下文压力'] + ' / ' + (d['上下文窗口'] || '?')
+          + (pct != null ? '（' + pct.toFixed(1) + '%）' : ''));
+      }
+      if (d['输出token'] != null) tip.push('累计输出：' + d['输出token'] + ' token');
+      if (mb != null) tip.push('transcript：' + mb.toFixed(1) + ' MB');
+      tip.push('判定：' + st);
+      if (d['提示']) tip.push(d['提示']);
+    }
+    el0.title = tip.join('\n');
+  }).catch(function () { el0.textContent = ''; });
+}
+
+// 给当前项目分配专属会话（历史项目没有映射时用）
+document.getElementById('btnAssignSession').onclick = function () {
+  var p = curProject();
+  var m = document.getElementById('amsg');
+  if (!p.名称) { alert('请先选择项目'); return; }
+  if (!confirm('给项目「' + p.名称 + '」分配一个专属复核会话？\n\n'
+    + '· 会新建一个会话并置顶（在「投标文件复核」工作区下）\n'
+    + '· 之后本项目的复核任务都投给它\n'
+    + '· 不影响已完成的复核结果')) return;
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '正在分配会话…';
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'session_assign', 参数: { 项目: p.名称 } })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) {
+      m.style.color = 'var(--c-err)';
+      m.textContent = '分配失败：' + r.error;
+      return;
+    }
+    m.style.color = 'var(--c-act)';
+    m.textContent = '已分配会话 ' + r['会话'] + '（' + (r['说明'] || '') + '）';
+    loadSessionHealth();
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '分配失败：' + e.message;
+  });
+};
+
+// 当前 OCR 推理后端徽标（进程级配置，与某次预热任务无关）
+function loadEngine() {
+  var el0 = document.getElementById('engineBadge');
+  if (!el0) return;
+  fetch('/api/engine').then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) { el0.textContent = ''; return; }
+    var txt = '引擎：' + (d['显示'] || d['引擎'] || '未知');
+    if (d['设备']) txt += ' · ' + d['设备'];
+    if (d['并发']) txt += ' · ' + d['并发'] + ' 并发';
+    if (d['服务端版本']) txt += ' · v' + d['服务端版本'];
+    el0.textContent = txt;
+    var tip = [];
+    if (d['服务端版本']) {
+      tip.push('服务端 v' + d['服务端版本']
+        + (d['服务端构建'] ? '（构建 ' + d['服务端构建'] + '）' : ''));
+    }
+    if (d['版本']) tip.push('推理引擎：' + (d['显示'] || '') + ' ' + d['版本']);
+    if (d['最近预热页每分']) {
+      tip.push('最近一次预热：' + d['最近预热页每分'] + ' 页/分'
+        + (d['最近预热单位'] ? '（' + d['最近预热单位'] + '）' : ''));
+      if (d['最近预热时间']) tip.push('时间：' + d['最近预热时间']
+        + (d['最近预热来源'] ? '（' + d['最近预热来源'] + '）' : ''));
+    } else if (d['参考页每分']) {
+      tip.push('吞吐参考值：约 ' + d['参考页每分'] + ' 页/分（本进程还没跑过预热）');
+    }
+    if (d['说明']) tip.push(d['说明']);
+    el0.title = tip.join('\n');
+    el0.style.color = (d['引擎'] === 'openvino') ? 'var(--c-act)' : 'var(--c-mute2)';
+  }).catch(function () { el0.textContent = ''; });
+}
+
+function loadQueue() {
+  var pj = curProject().名称;
+  var box0 = document.getElementById('queue');
+  if (!pj) {
+    if (box0) {
+      box0.innerHTML = '';
+      box0.appendChild(el('div', { class: 'muted', text: '请先选择项目后查看任务' }));
+    }
+    return;
+  }
+  fetch('/api/queue?project=' + encodeURIComponent(pj))
+    .then(function (r) { return r.json(); }).then(function (list) {
+    var box = document.getElementById('queue');
+    box.innerHTML = '';
+    var total = list.length;
+    var done = list.filter(function (t) { return t['状态'] === '已完成'; }).length;
+    var pend = list.filter(function (t) { return t['状态'] === '待处理'; }).length;
+    var run  = list.filter(function (t) { return t['状态'] === '处理中'; }).length;
+    var fail = list.filter(function (t) { return t['状态'] === '失败'; }).length;
+    // U2：记下「单位 → 最近任务状态」，供下拉框标注与置灰
+    var stMap = {};
+    list.forEach(function (t) {
+      var u = t['投标人'] || '';
+      if (!u) return;
+      var st = t['状态'] || '';
+      var prev = stMap[u] || '';
+      // 处理中/待处理 优先显示（比已完成更需要注意）
+      if (st === '处理中' || st === '待处理' || !prev) stMap[u] = st;
+    });
+    window._unitTaskState = stMap;
+    if (window._lastUnits) refreshReviewUnitSel(window._lastUnits);
+    var stopd = list.filter(function (t) {
+      return t['状态'] === '已停止' || t['状态'] === '已取消'; }).length;
+
+    // ---- 总览条 ----
+    var bar = el('div', { style: 'display:flex;align-items:center;gap:14px;margin:8px 0 10px;flex-wrap:wrap' });
+    bar.appendChild(el('span', { style: 'font-size:14px;font-weight:700', text: '任务总览' }));
+    bar.appendChild(el('span', { style: 'font-size:12px;color:var(--c-mute)', text: '共 ' + total + ' 个' }));
+    bar.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:var(--c-act)', text: '已完成 ' + done }));
+    if (pend) bar.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:var(--c-est)', text: '待处理 ' + pend }));
+    if (run)  bar.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:var(--c-info)', text: '处理中 ' + run }));
+    if (stopd) bar.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:#7d4bb8', text: '已停止 ' + stopd }));
+    if (fail) bar.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:var(--c-err)', text: '失败 ' + fail }));
+    if (total) {
+      var pct = Math.round(100 * done / total);
+      var track = el('div', { style: 'flex:1;min-width:140px;height:10px;background:var(--c-line);border-radius:5px;overflow:hidden' });
+      track.appendChild(el('div', { style: 'height:100%;width:' + pct + '%;background:' +
+        (pct === 100 ? 'var(--c-act)' : 'var(--c-info)') }));
+      bar.appendChild(track);
+      bar.appendChild(el('span', { style: 'font-size:12px;color:var(--c-mute2)', text: pct + '%' }));
+    }
+    box.appendChild(bar);
+
+    if (!total) {
+      box.appendChild(el('div', { class: 'muted', text: '暂无复核任务。上传投标文件后点「开始复核」即可提交。' }));
+      return;
+    }
+    if (run) {
+      box.appendChild(el('div', { class: 'hint', text:
+        '正在处理 ' + run + ' 个任务（agent 已认领，状态每 15 秒刷新）。'
+        + (pend ? ('另有 ' + pend + ' 个仍在排队。') : '') }));
+    } else if (pend) {
+      box.appendChild(el('div', { class: 'hint', text:
+        '有 ' + pend + ' 个任务排队中：提交后服务端会自动唤醒 agent（通常几分钟内）。' +
+        '若状态显示「已等待 10 分钟以上」，说明唤醒失败，需在对话中发一句话唤醒。' }));
+    }
+
+    // ---- 状态色 ----
+    var COLOR = {
+      '已完成': ['var(--c-act-bg)', 'var(--c-act)'],
+      '处理中': ['#e8f0fb', 'var(--c-info)'],
+      '待处理': ['var(--c-est-bg)', 'var(--c-est)'],
+      '已停止': ['#f3eefb', '#7d4bb8'],
+      '已取消': ['#f3eefb', '#7d4bb8'],
+      '失败':   ['#fdecea', 'var(--c-err)']
+    };
+    var TH = 'text-align:left;padding:6px;border-bottom:2px solid var(--c-line2);font-size:12px;color:var(--c-mute2)';
+    var TBL = 'width:100%;border-collapse:collapse;font-size:13px';
+
+    var thead = el('tr', {}, [
+      el('th', { style: TH, text: '状态' }),
+      el('th', { style: TH, text: '投标单位' }),
+      el('th', { style: TH, text: '得分' }),
+      el('th', { style: TH, text: '提交时间' }),
+      el('th', { style: TH, text: '完成时间' }),
+      el('th', { style: TH, text: '操作' })
+    ]);
+    var tbody = el('tbody', {});
+    list.forEach(function (t) {
+      var st = t['状态'] || '未知';
+      var c = COLOR[st] || ['var(--c-line)', 'var(--c-mute2)'];
+      var badge = el('span', { style: 'display:inline-block;padding:2px 8px;border-radius:10px;' +
+        'font-size:12px;font-weight:700;background:' + c[0] + ';color:' + c[1], text: st });
+      var stWrap = el('span', {});
+      stWrap.appendChild(badge);
+      if (t['唤醒未响应']) {
+        var w1 = el('span', { style: 'display:block;font-size:11px;color:#b45309;margin-top:3px',
+          text: '唤醒未响应 ' + (t['已等待分钟'] || 0) + ' 分钟' });
+        w1.title = '已唤醒 ' + (t['唤醒次数'] || 0) + ' 次，' + (t['已等待分钟'] || 0)
+          + ' 分钟内没人认领。可能：会话没收到、模型卡住、或会话上下文已满。';
+        stWrap.appendChild(w1);
+      } else if (st === '处理中' && t['无进展'] && !t['疑似僵死']) {
+        var w2 = el('span', { style: 'display:block;font-size:11px;color:#b45309;margin-top:3px',
+          text: '无进展 ' + (t['无进展分钟'] || 0) + ' 分钟' });
+        w2.title = 'agent 上次调接口距今 ' + (t['无进展分钟'] || 0) + ' 分钟';
+        stWrap.appendChild(w2);
+      } else if (t['疑似僵死']) {
+        var w3 = el('span', { style: 'display:block;font-size:11px;color:#c0392b;margin-top:3px',
+          text: '疑似僵死 ' + (t['无进展分钟'] || 0) + ' 分钟' });
+        stWrap.appendChild(w3);
+      }
+      var score = '—';
+      if (t['得分'] !== undefined && t['得分'] !== null) {
+        score = t['得分'] + ' / ' + (t['满分'] || '');
+      }
+      var ops = el('span', {});
+      var active = (st === '待处理' || st === '处理中');
+      if (active) {
+        var stopBtn = el('button', { style:
+          'padding:2px 8px;font-size:12px;margin-left:6px;border-color:#e8b4b4;color:#c0392b',
+          text: '停止' });
+        stopBtn.onclick = async function () {
+          if (!(await dlgConfirm('停止任务', '停止任务 ' + t['id'] + ' ？\n\n' +
+              '状态会置为「已停止」，agent 不再处理该任务；\n' +
+              '任务记录与已产生的复核结果都会保留。'))) return;
+          stopBtn.disabled = true;
+          stopBtn.textContent = '停止中…';
+          fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 任务: 'queue_stop',
+              参数: { id: t['id'], 原因: '用户在前端停止' } }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (!r.ok) { alert('停止失败：' + r.error); stopBtn.disabled = false;
+                stopBtn.textContent = '停止'; return; }
+              loadQueue();
+            }).catch(function (e) { alert('停止失败：' + e.message);
+              stopBtn.disabled = false; stopBtn.textContent = '停止'; });
+        };
+        ops.appendChild(stopBtn);
+      }
+      if (st === '待处理') {
+        var wakeBtn = el('button', { style:
+          'padding:2px 8px;font-size:12px;margin-left:6px;border-color:#bcd4f0;color:#1554b0',
+          text: '重发唤醒' + (t['唤醒次数'] ? ('（已 ' + t['唤醒次数'] + ' 次）') : '') });
+        wakeBtn.title = '任务在排队但可能上次唤醒没送到；点这里再喊一次（不改任务状态）';
+        if (t['可重发唤醒'] === false) {
+          wakeBtn.disabled = true;
+          wakeBtn.style.opacity = '0.5';
+          wakeBtn.textContent = '重发已达上限';
+          wakeBtn.title = '已唤醒 ' + (t['唤醒次数'] || 0) + ' 次仍无人接手，继续重发多半无效。'
+            + '\n建议：换一个新会话再「分配会话」，或点「重置」。';
+        }
+        wakeBtn.onclick = function () {
+          wakeBtn.disabled = true;
+          wakeBtn.textContent = '发送中…';
+          var m2 = document.getElementById('msg');
+          fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 任务: 'queue_wake', 参数: { id: t['id'] } }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              wakeBtn.disabled = false;
+              wakeBtn.textContent = '重发唤醒';
+              if (!r.ok) { alert('重发失败：' + r.error); return; }
+              if (m2) {
+                m2.style.color = r['已唤醒'] ? 'var(--c-act)' : 'var(--c-err)';
+                m2.textContent = '任务 ' + t['id'] + '：' +
+                  (r['已唤醒'] ? ('已重新唤醒（第 ' + r['次数'] + ' 次）') :
+                   ('唤醒仍失败：' + (r['唤醒说明'] || '') +
+                    '　请检查「评分结果」里的会话徽标'));
+              }
+              loadQueue();
+            }).catch(function (e) { alert('重发失败：' + e.message);
+              wakeBtn.disabled = false; wakeBtn.textContent = '重发唤醒'; });
+        };
+        ops.appendChild(wakeBtn);
+      }
+      if (st === '处理中' && t['疑似僵死']) {
+        var resetBtn = el('button', { style:
+          'padding:2px 8px;font-size:12px;margin-left:6px;border-color:#e0b060;' +
+          'color:#b45309;font-weight:700',
+          text: '重置' });
+        resetBtn.title = '疑似僵死：把任务置回待处理并重新唤醒（已处理 ' +
+          (t['已处理分钟'] || '?') + ' 分钟）';
+        resetBtn.onclick = function () {
+          if (!confirm('任务 ' + t['id'] + ' 已处理 ' + (t['已处理分钟'] || '?') +
+              ' 分钟，疑似僵死。\n\n重置会把它置回「待处理」并重新唤醒 agent 继续；\n' +
+              '已 OCR 的页有缓存，不会重跑。\n\n确定重置吗？')) return;
+          resetBtn.disabled = true;
+          resetBtn.textContent = '重置中…';
+          var m1 = document.getElementById('msg');
+          fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 任务: 'queue_reset',
+              参数: { id: t['id'], 唤醒: true } }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (!r.ok) { alert('重置失败：' + r.error);
+                resetBtn.disabled = false; resetBtn.textContent = '重置'; return; }
+              if (m1) {
+                m1.style.color = r['已唤醒'] ? 'var(--c-act)' : 'var(--c-est)';
+                m1.textContent = '任务 ' + t['id'] + ' 已重置为待处理，' +
+                  (r['已唤醒'] ? '已唤醒 agent 继续处理' :
+                   ('但唤醒失败：' + (r['唤醒说明'] || '') + '，需在对话框发一句话唤醒'));
+              }
+              loadQueue();
+            }).catch(function (e) { alert('重置失败：' + e.message);
+              resetBtn.disabled = false; resetBtn.textContent = '重置'; });
+        };
+        ops.appendChild(resetBtn);
+      }
+      var resumable = (st === '已停止' || st === '已取消' || st === '失败');
+      if (resumable) {
+        var resumeBtn = el('button', { style:
+          'padding:2px 8px;font-size:12px;margin-left:6px;border-color:#b9d8b9;color:#1e7e34;font-weight:700',
+          text: '继续' });
+        resumeBtn.onclick = function () {
+          if (!confirm('继续任务 ' + t['id'] + ' ？\n\n' +
+              '状态会恢复为「待处理」，并自动唤醒 agent 从中断处继续；\n' +
+              '已 OCR 的页有缓存，不会重跑。' +
+              (t['恢复次数'] ? ('\n（该任务已恢复过 ' + t['恢复次数'] + ' 次）') : ''))) return;
+          resumeBtn.disabled = true;
+          resumeBtn.textContent = '恢复中…';
+          var m0 = document.getElementById('msg');
+          fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 任务: 'queue_resume',
+              参数: { id: t['id'], 唤醒: true } }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (!r.ok) { alert('继续失败：' + r.error);
+                resumeBtn.disabled = false; resumeBtn.textContent = '继续'; return; }
+              if (m0) {
+                m0.style.color = r['已唤醒'] ? 'var(--c-act)' : 'var(--c-est)';
+                m0.textContent = '任务 ' + t['id'] + ' 已恢复为待处理，' +
+                  (r['已唤醒'] ? '已唤醒 agent 继续处理' :
+                   ('但唤醒失败：' + (r['唤醒说明'] || '') + '，需在对话框发一句话唤醒'));
+              }
+              loadQueue();
+            }).catch(function (e) { alert('继续失败：' + e.message);
+              resumeBtn.disabled = false; resumeBtn.textContent = '继续'; });
+        };
+        ops.appendChild(resumeBtn);
+      }
+      if (st === '已完成') {
+        var redoBtn = el('button', { style:
+          'padding:2px 8px;font-size:12px;margin-left:6px;border-color:#e8c48a;color:#8a5b00',
+          text: '重置并重审' });
+        redoBtn.title = '把已完成任务置回「待处理」并重新唤醒 agent 重做；'
+          + '现有结果会先归档到 复核报告\\_历史\\ 再被覆盖。';
+        redoBtn.onclick = function () {
+          if (!confirm('任务 ' + t['id'] + ' 已完成。\n\n'
+            + '「继续」对已完成任务无效，要重做只能重置。\n'
+            + '重置后状态 →「待处理」，重新唤醒 agent 重判；\n'
+            + '现有结果先复制到 复核报告\\_历史\\。\n\n确定重做吗？')) return;
+          if (!confirm('再次确认：将重新判分并覆盖 项目\\' + (curProject().名称 || '')
+            + '\\复核报告\\' + (t['投标人'] || '') + '_复核结果.json。\n\n继续？')) return;
+          redoBtn.disabled = true;
+          redoBtn.textContent = '重置中…';
+          var mm = document.getElementById('msg');
+          fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 任务: 'queue_reset',
+              参数: { id: t['id'], 唤醒: true, 确认覆盖: true } }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (!r.ok) { alert('重置失败：' + r.error);
+                redoBtn.disabled = false; redoBtn.textContent = '重置并重审'; return; }
+              if (mm) {
+                mm.style.color = r['已唤醒'] ? 'var(--c-act)' : 'var(--c-est)';
+                mm.textContent = '任务 ' + t['id'] + ' 已重置为待处理，'
+                  + (r['已唤醒'] ? '已唤醒 agent 重做'
+                     : ('但唤醒失败：' + (r['唤醒说明'] || '')))
+                  + ((r['旧结果已归档'] || []).length
+                     ? '（旧结果已归档：' + r['旧结果已归档'].join('、') + '）' : '');
+              }
+              loadQueue();
+            }).catch(function (e) { alert('重置失败：' + e.message);
+              redoBtn.disabled = false; redoBtn.textContent = '重置并重审'; });
+        };
+        ops.appendChild(redoBtn);
+      }
+      var del = el('button', { style: 'padding:2px 8px;font-size:12px;margin-left:6px', text: '删除' });
+      del.onclick = function () {
+        if (!confirm('确定删除任务 ' + t['id'] + ' ？（只删任务记录，不删复核结果与文件）')) return;
+        fetch('/api/queue?id=' + encodeURIComponent(t['id']), { method: 'DELETE' })
+          .then(function (r) { return r.json(); })
+          .then(function (r) {
+            if (!r.ok) { alert('删除失败：' + r.error); return; }
+            loadQueue();
+          }).catch(function (e) { alert('删除失败：' + e.message); });
+      };
+      ops.appendChild(del);
+      var tdStatus = el('td', { style: 'padding:6px;white-space:nowrap' });
+      tdStatus.appendChild(stWrap);
+      if (st === '处理中') {
+        var runMin = 0;
+        try {
+          var r0 = new Date(String(t['开始时间'] || t['提交时间'] || '')
+                    .replace(' ', 'T')).getTime();
+          if (!isNaN(r0)) runMin = Math.floor((Date.now() - r0) / 60000);
+        } catch (e) {}
+        tdStatus.appendChild(el('span', {
+          style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-info);font-weight:700',
+          text: 'agent 处理中' + (runMin > 0 ? ('，已开始 ' + runMin + ' 分钟') : '，刚刚开始') }));
+        if (t['更新时间']) {
+          tdStatus.appendChild(el('span', {
+            style: 'display:block;font-size:11px;color:var(--c-mute)',
+            text: '更新 ' + t['更新时间'] }));
+        }
+      }
+      if (st === '待处理') {
+        var mins = 0;
+        try {
+          var t0 = new Date(String(t['提交时间'] || '').replace(' ', 'T')).getTime();
+          if (!isNaN(t0)) mins = Math.floor((Date.now() - t0) / 60000);
+        } catch (e) {}
+        if (mins >= 10) {
+          tdStatus.appendChild(el('span', {
+            style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-err);font-weight:700',
+            text: '已等待 ' + mins + ' 分钟未处理' }));
+          tdStatus.appendChild(el('span', {
+            style: 'display:block;font-size:11px;color:var(--c-err)',
+            text: '可能唤醒失败，请在对话中发一句话唤醒' }));
+        } else {
+          tdStatus.appendChild(el('span', {
+            style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-mute)',
+            text: mins > 0 ? ('已等待 ' + mins + ' 分钟') : '刚刚提交' }));
+        }
+      }
+      var tdOps = el('td', { style: 'padding:6px' });
+      tdOps.appendChild(ops);
+      tbody.appendChild(el('tr', { style: 'border-bottom:1px solid var(--c-line)' }, [
+        tdStatus,
+        el('td', { style: 'padding:6px;font-weight:600', text: t['投标人'] || '（未识别）' }),
+        el('td', { style: 'padding:6px;font-weight:700;color:' +
+          (score === '—' ? 'var(--c-mute)' : 'var(--c-act)'), text: score }),
+        el('td', { style: 'padding:6px;font-size:12px;color:var(--c-mute2)', text: t['提交时间'] || '' }),
+        el('td', { style: 'padding:6px;font-size:12px;color:var(--c-mute2)', text: t['完成时间'] || '' }),
+        tdOps
+      ]));
+    });
+    var table = el('table', { style: TBL }, [el('thead', {}, [thead]), tbody]);
+    // 有未完成任务时每 15 秒自动刷新，保证状态及时同步
+    if (window._qTimer) { clearTimeout(window._qTimer); window._qTimer = null; }
+    if (pend || run) {
+      window._qTimer = setTimeout(function () {
+        if (document.getElementById('queue')) { loadQueue(); loadSessionHealth(); }
+      }, 15000);
+    }
+    var wrap = el('div', { class: 'tablewrap' }, [table]);
+    box.appendChild(wrap);
+  }).catch(function () {});
+}
+
+// U1：按钮忙碌态（提交期间禁用并改文案，结束恢复）
+function setBtnBusy(btn, busy, busyText) {
+  if (!btn) return;
+  if (busy) {
+    if (!btn.getAttribute('data-label')) btn.setAttribute('data-label', btn.textContent);
+    btn.disabled = true;
+    if (busyText) btn.textContent = busyText;
+  } else {
+    btn.disabled = false;
+    var lb = btn.getAttribute('data-label');
+    if (lb) btn.textContent = lb;
+  }
+}
+
+async function submitOne(unit, isRedo, btn) {
+  var p = curProject();
+  var m = document.getElementById('amsg');
+  if (!p.名称) { alert('请先选择项目'); return; }
+  if (isRedo && !(await dlgConfirm('重新复核', '重做将覆盖「' + unit + '」的现有复核结果。\n\n确定重做吗？', { danger: true }))) {
+    setBtnBusy(btn, false);
+    return;
+  }
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '正在提交：' + unit + '…';
+  fetch('/api/request', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 项目: p.名称, 投标单位: unit,
+                           重新复核: !!isRedo })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) {
+      m.style.color = 'var(--c-err)'; m.textContent = '提交失败：' + r.error;
+      setBtnBusy(btn, false);
+      return;
+    }
+    var skip = r['跳过'] || [];
+    var made = r['已提交'] || [];
+    // 异步模式：返回批次号，转交 watchSubmit 显示抽取进度
+    if (r['异步'] && r['批次']) {
+      m.style.color = 'var(--c-info)';
+      m.textContent = '已提交 ' + unit + '，正在抽取投标文件…';
+      watchSubmit(r['批次'], btn, m, skip);   // 传按钮：抽取结束自动恢复
+      // 提交时服务端可能刚给本项目建了专属会话，徽标必须跟着刷新
+      loadSessionHealth();
+      loadUnits();
+      loadQueue();
+      return;
+    }
+    if (made.length) {
+      m.style.color = 'var(--c-act)';
+      m.textContent = '已提交 ' + unit + '（' + (r['提示'] || '') + '）';
+    } else if (skip.length) {
+      m.style.color = 'var(--c-est)';
+      m.textContent = unit + '：' + (skip[0]['原因'] || '未提交');
+    } else {
+      m.style.color = 'var(--c-est)';
+      m.textContent = unit + '：未新建任务（' + (r['提示'] || '原因未知') + '）';
+    }
+    loadUnits();
+    loadQueue();
+    setBtnBusy(btn, false);
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '提交失败：' + e.message;
+    setBtnBusy(btn, false);
+  });
+}
+
+async function deleteUnit(unit, reviewed) {
+  var p = curProject();
+  if (!p.名称) { return; }
+  var warn = '确定删除投标单位「' + unit + '」？\n\n将删除：\n' +
+    '· 投标文件目录（含原始文件、抽取的正文、扫描页与 OCR 缓存）\n' +
+    (reviewed ? '· 该单位的复核结果（得分会一并消失）\n' : '') +
+    '· 该项目下尚未处理的复核任务\n\n此操作不可撤销。';
+  if (!(await dlgConfirm('删除投标单位', warn, { danger: true }))) { return; }
+  fetch('/api/unit?project=' + encodeURIComponent(p.名称) +
+        '&bidder=' + encodeURIComponent(unit), { method: 'DELETE' })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) { alert('删除失败：' + (r.error || '未知错误')); return; }
+      if (typeof loadUnits === 'function') { loadUnits(); }
+      if (typeof loadBids === 'function') { loadBids(); }
+      if (typeof loadScores === 'function') { loadScores(); }
+      if (typeof loadOcrUnits === 'function') { loadOcrUnits(); }
+      var box = document.getElementById('units');
+      if (box) {
+        box.insertBefore(el('div', { class: 'hint ok',
+          text: '已删除「' + unit + '」：' + (r['已删除'] || []).join('、') }),
+          box.firstChild);
+      }
+    })
+    .catch(function (e) { alert('删除失败：' + e.message); });
+}
+
+function loadOcrUnits() {
+  if (window._ocrPollTimer) { clearInterval(window._ocrPollTimer); window._ocrPollTimer = null; }
+  var p = curProject();
+  var sel = document.getElementById('ocrUnitSel');
+  if (!sel) return;
+  sel.innerHTML = '';
+  sel.appendChild(el('option', { value: '', text: '选择要 OCR 的投标单位' }));
+  var fbox = document.getElementById('ocrFiles');
+  if (fbox) fbox.innerHTML = '';
+  var m = document.getElementById('ocrMsg');
+  if (m) m.textContent = '';
+  if (!p.名称) return;
+  fetch('/api/units?project=' + encodeURIComponent(p.名称))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      (d['单位'] || []).forEach(function (x) {
+        sel.appendChild(el('option', { value: x['投标单位'], text: x['投标单位'] }));
+      });
+    }).catch(function () {});
+}
+
+function loadOcrFiles(unit) {
+  var p = curProject();
+  var box = document.getElementById('ocrFiles');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!p.名称 || !unit) return;
+  box.appendChild(el('div', { class: 'muted', text: '读取文件清单…' }));
+  fetch('/api/bid_files?project=' + encodeURIComponent(p.名称) + '&unit=' + encodeURIComponent(unit))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      box.innerHTML = '';
+      if (!d.ok || !(d['文件'] || []).length) {
+        box.appendChild(el('div', { class: 'muted', text: (d && d.error) || '该单位没有投标文件' }));
+        return;
+      }
+      box.appendChild(el('div', { style: 'font-size:12px;color:var(--c-mute2);margin-bottom:4px',
+        text: '共 ' + d['文件数'] + ' 个文件（默认全选，取消勾选=不识别）' }));
+      d['文件'].forEach(function (f) {
+        var row = el('label', { style: 'display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid var(--c-line)' });
+        var cb = el('input', { type: 'checkbox', checked: true, style: 'width:auto' });
+        cb.dataset.file = f['文件'];
+        row.appendChild(cb);
+        row.appendChild(el('span', { style: 'font-size:13px', text: f['册名'] + '　' + (f['大小MB'] || 0) + ' MB' }));
+        var info = '页数 ' + (f['页数'] || 0) + '，需识别 ' + (f['无文字页'] || 0) + ' 页，预计 ' + (f['预计分钟'] || 0) + ' 分钟';
+        if (f['已OCR页']) info += '，已识别 ' + f['已OCR页'] + ' 页';
+        row.appendChild(el('span', { style: 'font-size:12px;color:var(--c-mute)', text: info }));
+        box.appendChild(row);
+      });
+    }).catch(function (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', { class: 'muted', text: '读取失败：' + e.message }));
+    });
+}
+
+document.getElementById('ocrUnitSel').onchange = function () {
+  loadOcrFiles(this.value);
+};
+
+document.getElementById('btnStartOcr').onclick = async function () {
+  if (window._ocrPollTimer) { clearInterval(window._ocrPollTimer); window._ocrPollTimer = null; }
+  var p = curProject();
+  var unit = document.getElementById('ocrUnitSel').value;
+  var m = document.getElementById('ocrMsg');
+  if (!p.名称 || !unit) { alert('请先选择要 OCR 的投标单位'); return; }
+  var files = [];
+  document.querySelectorAll('#ocrFiles input[type=checkbox]:checked').forEach(function (cb) {
+    files.push(cb.dataset.file);
+  });
+  if (!files.length) { alert('请至少勾选一个文件'); return; }
+  if (!(await dlgConfirm('开始 OCR', '对「' + unit + '」的 ' + files.length + ' 个文件执行 OCR？\n\n'
+      + files.join('\n') + '\n\n未勾选的文件不识别。'))) return;
+  var btn = this; btn.disabled = true; btn.textContent = 'OCR 中…';
+  m.style.color = 'var(--c-mute2)'; m.textContent = '已提交后台识别…';
+  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'ocr_files', 参数: { 项目: p.名称, 投标单位: unit, 文件: files } }) })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      btn.disabled = false; btn.textContent = '开始 OCR';
+      if (!r.ok) { m.style.color = 'var(--c-err)'; m.textContent = '失败：' + r.error; return; }
+      var n = 0; (r['已启动'] || []).forEach(function (x) { n += (x['预热页数'] || 0); });
+      if (!n) {
+        // 勾的文件全是文字层，无需 OCR
+        m.style.color = 'var(--c-act)';
+        m.textContent = '无需 OCR：勾选的文件都有文字层';
+        loadOcrFiles(unit); loadUnits();
+        return;
+      }
+      m.style.color = 'var(--c-est)';
+      m.textContent = '识别中 0/' + n + ' 页（0%）';
+      var pollTicks = 0;
+      window._ocrPollTimer = setInterval(function () {
+        pollTicks++;
+        if (pollTicks > 60) {
+          // G14 兜底：3 分钟还没拿到进度（可能服务刚重启，_PREWARM_STATE 已清零），
+          // 停止轮询，避免 total 恒 0 的空转。
+          clearInterval(window._ocrPollTimer);
+          window._ocrPollTimer = null;
+          m.style.color = 'var(--c-mute2)';
+          m.textContent = '未获取到进度（可能服务刚重启）。可在单位表看 OCR 状态。';
+          loadUnits();
+          return;
+        }
+        fetch('/api/prewarm').then(function (r2) { return r2.json(); }).then(function (st) {
+          var done = 0, total = 0, running = 0;
+          Object.keys(st || {}).forEach(function (k) {
+            var t = st[k] || {};
+            if ((t['投标单位'] || '') !== unit) return;
+            done += (t['已完成'] || 0);
+            total += (t['总数'] || t['页数'] || 0);
+            if (t['状态'] === '运行中') running++;
+          });
+          if (total > 0) {
+            m.style.color = 'var(--c-est)';
+            m.textContent = '识别中 ' + done + '/' + total + ' 页（' +
+              Math.round(done / total * 100) + '%）';
+          }
+          if (running === 0 && (total > 0 || done > 0)) {
+            clearInterval(window._ocrPollTimer);
+            window._ocrPollTimer = null;
+            m.style.color = 'var(--c-act)';
+            m.textContent = 'OCR 完成：已识别 ' + (total || done) + ' 页';
+            loadOcrFiles(unit);   // 刷新每册「已识别 X 页」
+            loadUnits();          // 刷新单位表 OCR 状态
+          }
+        }).catch(function () {
+          clearInterval(window._ocrPollTimer);
+          window._ocrPollTimer = null;
+        });
+      }, 3000);
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = '开始 OCR';
+      m.style.color = 'var(--c-err)'; m.textContent = '失败：' + e.message;
+    });
+};
+
+function loadUnits() {
+  var p = curProject();
+  var box = document.getElementById('units');
+  if (!p.名称) {
+    box.innerHTML = '';
+    box.appendChild(el('div', { class: 'muted', text: '填写项目名称后显示各单位复核进度' }));
+    return;
+  }
+  fetch('/api/units?project=' + encodeURIComponent(p.名称))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      box.innerHTML = '';
+      if (!d['单位数']) {
+        box.appendChild(el('div', { class: 'muted', text: '该项目尚无投标文件' }));
+        refreshReviewUnitSel({ 单位: [] });
+        return;
+      }
+      var done = d['已复核'] || 0;
+      var total = d['单位数'] || 0;
+      var head = el('div', { style: 'display:flex;align-items:center;gap:12px;margin:10px 0 8px' });
+      head.appendChild(el('span', { style: 'font-size:14px;font-weight:700', text: '投标单位复核进度' }));
+      head.appendChild(el('span', { style: 'font-size:13px;font-weight:700;color:' +
+        (done === total ? 'var(--c-act)' : 'var(--c-est)'), text: '已复核 ' + done + ' / ' + total }));
+      if (done < total) {
+        var pendMin = 0, pendN = 0, unk = 0;
+        (d['单位'] || []).forEach(function (x) {
+          if (x['已复核']) return;
+          if (typeof x['预计分钟'] === 'number') { pendMin += x['预计分钟']; pendN++; }
+          else { unk++; }
+        });
+        var tip = '还有 ' + (total - done) + ' 家未复核';
+        if (pendN) {
+          tip += '，预计共需 ' + pendMin.toFixed(0) + ' 分钟';
+          if (unk) tip += '（另有 ' + unk + ' 家待抽取后估算）';
+        } else if (unk) {
+          tip += '（待抽取后可估算耗时）';
+        }
+        head.appendChild(el('span', { style: 'font-size:12px;color:var(--c-est)',
+          text: tip }));
+      } else if (total) {
+        var realMin = 0;
+        (d['单位'] || []).forEach(function (x) {
+          if (typeof x['实际分钟'] === 'number') realMin += x['实际分钟'];
+        });
+        if (realMin > 0) {
+          head.appendChild(el('span', { style: 'font-size:12px;color:var(--c-act)',
+            text: '全部已复核，累计用时 ' + realMin.toFixed(0) + ' 分钟' }));
+        }
+      }
+      box.appendChild(head);
+
+      var TH = 'text-align:left;padding:6px;border-bottom:2px solid var(--c-line2);font-size:12px;color:var(--c-mute2)';
+      var thead = el('tr', {}, [
+        el('th', { style: TH, text: '投标单位' }),
+        el('th', { style: TH, text: '状态' }),
+        el('th', { style: TH, text: '得分' }),
+        el('th', { style: TH, text: '未决项' }),
+        el('th', { style: TH, text: '复核时间' }),
+        el('th', { style: TH, text: '耗时' }),
+        el('th', { style: TH, text: '操作' })
+      ]);
+      var tbody = el('tbody', {});
+      (d['单位'] || []).forEach(function (u) {
+        var ok = u['已复核'];
+        var submitting = !!u['提交中'];
+        var badge = el('span', { style: 'display:inline-block;padding:2px 8px;border-radius:10px;' +
+          'font-size:12px;font-weight:700;background:' +
+          (ok ? 'var(--c-act-bg)' : (submitting ? 'var(--c-info-bg)' : 'var(--c-est-bg)')) +
+          ';color:' + (ok ? 'var(--c-act)' : (submitting ? 'var(--c-info)' : 'var(--c-est)')),
+          text: ok ? '已复核' : (submitting ? '提交中（预处理）' : '未复核') });
+        var tdS = el('td', { style: 'padding:6px' });
+        tdS.appendChild(badge);
+        // OCR 状态小字（v1.9.2）
+        (function () {
+          var ocrTxt, ocrColor;
+          if (u['已导页']) {
+            if (u['OCR完成']) { ocrTxt = 'OCR 完成'; ocrColor = 'var(--c-act)'; }
+            else if ((u['需OCR页'] || 0) > 0) {
+              ocrTxt = 'OCR ' + (u['已OCR页'] || 0) + '/' + u['需OCR页'] + ' 页';
+              ocrColor = 'var(--c-est)';
+            } else { ocrTxt = '无需 OCR'; ocrColor = 'var(--c-mute)'; }
+          } else {
+            ocrTxt = 'OCR 未导页'; ocrColor = 'var(--c-mute)';
+          }
+          tdS.appendChild(el('div', { style: 'font-size:11px;color:' + ocrColor +
+            ';margin-top:2px;font-weight:400', text: ocrTxt }));
+        })();
+        var tdName = el('td', { style: 'padding:6px;font-weight:600',
+          text: u['投标单位'] + '（' + u['文件大小MB'] + ' MB）' });
+        if (u['数据异常']) {
+          tdName.appendChild(el('div', { style: 'font-size:11px;color:var(--c-err);' +
+            'font-weight:400;margin-top:2px', text: '⚠ ' + u['数据异常'] }));
+        }
+        // ---- 耗时：已复核显示实际，未复核显示预计 ----
+        var mins = (typeof u['实际分钟'] === 'number') ? u['实际分钟']
+                 : ((typeof u['预计分钟'] === 'number') ? u['预计分钟'] : null);
+        var tdCost = el('td', { style: 'padding:6px;font-size:12px;min-width:120px' });
+        if (mins === null) {
+          tdCost.appendChild(el('span', { style: 'color:var(--c-mute)',
+            text: u['图片数'] ? '—' : '待抽取后估算' }));
+        } else {
+          var isReal = (typeof u['实际分钟'] === 'number');
+          var maxMin = 1;
+          (d['单位'] || []).forEach(function (x) {
+            var m2 = (typeof x['实际分钟'] === 'number') ? x['实际分钟']
+                   : ((typeof x['预计分钟'] === 'number') ? x['预计分钟'] : 0);
+            if (m2 > maxMin) maxMin = m2;
+          });
+          var pct = Math.max(4, Math.min(100, mins / maxMin * 100));
+          tdCost.appendChild(el('div', { style: 'font-weight:600;color:' +
+            (isReal ? 'var(--c-act)' : 'var(--c-est)'),
+            text: (isReal ? '实际 ' : '预计识别 ') + mins.toFixed(1) + ' 分钟' }));
+          tdCost.appendChild(el('div', { style: 'font-size:11px;color:var(--c-mute)',
+            text: (isReal ? '含识别与判断，' : '') + (u['图片数'] ? (u['图片数'] + ' 张扫描页') : '') +
+                  (u['页数'] ? (' · ' + u['页数'] + ' 页') : '') }));
+          var barWrap2 = el('div', { style: 'height:6px;background:var(--c-line);' +
+            'border-radius:3px;margin-top:3px;overflow:hidden' });
+          barWrap2.appendChild(el('div', { style: 'height:100%;width:' +
+            pct.toFixed(0) + '%;background:' + (isReal ? 'var(--c-act)' : 'var(--c-est-bar)') }));
+          tdCost.appendChild(barWrap2);
+        }
+        var tdOps = el('td', { style: 'padding:6px;white-space:nowrap' });
+        var redo = el('button', {
+          style: 'padding:2px 8px;font-size:12px', text: ok ? '重做' : '复核' });
+        redo.onclick = function () { submitOne(u['投标单位'], !!ok, redo); };
+        if (submitting) {
+          redo.disabled = true;
+          redo.title = '正在预处理（抽取正文/导出扫描页），请稍候';
+        }
+        tdOps.appendChild(redo);
+        var del = el('button', {
+          style: 'padding:2px 8px;font-size:12px;margin-left:6px;' +
+            'color:var(--c-err);border-color:#e6b0aa',
+          text: '删除',
+          onclick: function () { deleteUnit(u['投标单位'], ok); } });
+        if (submitting) {
+          del.disabled = true;
+          del.title = '提交/预处理期间不能删除该单位';
+        }
+        tdOps.appendChild(del);
+        tbody.appendChild(el('tr', { style: 'border-bottom:1px solid var(--c-line)' }, [
+          tdName,
+          tdS,
+          el('td', { style: 'padding:6px;font-weight:700;color:' +
+            (ok ? 'var(--c-act)' : 'var(--c-mute)'),
+            text: ok ? (u['得分'] + ' / ' + u['满分']) : '—' }),
+          el('td', { style: 'padding:6px;font-size:12px;color:var(--c-est)',
+            text: (u['未决项'] || []).length ? ('项 ' + u['未决项'].join('、')) : '无' }),
+          el('td', { style: 'padding:6px;font-size:12px;color:var(--c-mute2)',
+            text: u['复核时间'] || '' }),
+          tdCost,
+          tdOps
+        ]));
+      });
+      var tbl = el('table', { style: 'width:100%;border-collapse:collapse;font-size:13px' },
+        [el('thead', {}, [thead]), tbody]);
+      box.appendChild(el('div', { class: 'tablewrap' }, [tbl]));
+      window._lastUnits = d;   // 供 loadQueue 重绘下拉时复用
+      refreshReviewUnitSel(d);
+      if (done < total) {
+        box.appendChild(el('div', { class: 'hint', text:
+          '未复核的单位：在上方下拉框选一家，再点「开始复核」。一次只复核一家，同一家不允许重复提交。' }));
+      }
+    }).catch(function () {});
+}
+
+// 下拉框：只列「未复核」的单位；没有可复核的就禁用「开始复核」
+function refreshReviewUnitSel(d) {
+  var sel = document.getElementById('reviewUnitSel');
+  var btn = document.getElementById('btnStartReview');
+  if (!sel) return;
+  var keep = sel.value;
+  var list = ((d && d['单位']) || []).filter(function (x) { return !x['已复核']; });
+  sel.innerHTML = '';
+  var head = document.createElement('option');
+  head.value = '';
+  head.textContent = list.length
+    ? ('选择要复核的单位（' + list.length + ' 家可复核）')
+    : '（没有未复核的单位）';
+  sel.appendChild(head);
+  var st8 = window._unitTaskState || {};       // 由 loadQueue 维护：单位 → 任务状态
+  list.forEach(function (x) {
+    var o = document.createElement('option');
+    var u = x['投标单位'];
+    var ts = st8[u] || '';
+    if (x['提交中']) ts = '提交中';
+    var label = u;
+    if (ts === '提交中') {
+      label += '（正在预处理，请稍候）';
+    } else if (ts === '处理中') {
+      label += '（复核中，不能重复提交）';
+    } else if (ts === '待处理') {
+      label += '（排队中，等待复核会话接手）';
+    } else if (ts === '已停止' || ts === '已取消' || ts === '失败') {
+      label += '（' + ts + '，可在任务列表点「恢复」）';
+    } else if (typeof x['预计分钟'] === 'number') {
+      label += '（约 ' + x['预计分钟'].toFixed(0) + ' 分钟）';
+    }
+    o.value = u;
+    o.textContent = label;
+    // 处理中/待处理的家直接置灰：选了也会被服务端拒绝，不如不给选
+    if (ts === '处理中' || ts === '待处理' || ts === '提交中') o.disabled = true;
+    sel.appendChild(o);
+  });
+  if (keep && list.some(function (x) { return x['投标单位'] === keep; })) {
+    sel.value = keep;
+  }
+  if (btn) btn.disabled = !list.length || !!window._projArchived;
+}
+
+document.getElementById('btnStartReview').onclick = function () {
+  var p = curProject();
+  var m = document.getElementById('amsg');
+  if (!p.名称) { alert('请先在「项目信息」里填写项目名称'); return; }
+  var sel = document.getElementById('reviewUnitSel');
+  var unit = sel ? (sel.value || '') : '';
+  if (!unit) {
+    alert('请先在下拉框里选择要复核的「一家」投标单位。\n\n'
+      + '规则：\n'
+      + '· 每次只复核一家；\n'
+      + '· 同一家不允许重复提交（已有未完成任务或已有复核结果都不行）；\n'
+      + '· 不允许两家同时跑复核任务。');
+    return;
+  }
+  // U1：点击即禁用，防止连点造成重复任务（预处理期间队列里还没有任务）
+  setBtnBusy(this, true, '提交中…');
+  // 单家提交，复用 submitOne（内含重复/并发拦截的服务端校验）
+  submitOne(unit, false, this);
+};
+
+function fmtSec(s) {
+  if (s === null || s === undefined) return '—';
+  s = Math.round(s);
+  if (s < 60) return s + ' 秒';
+  return Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
+}
+
+function watchSubmit(bid, btn, m, skip) {
+  var box = document.getElementById('submitProg');
+  if (box) box.parentNode.removeChild(box);
+  box = el('div', { id: 'submitProg', class: 'card',
+    style: 'margin-top:10px;border-left:5px solid var(--c-info)' });
+  var title = el('div', { style: 'font-weight:700;margin-bottom:8px;' +
+    'display:flex;align-items:center;gap:10px' });
+  title.appendChild(el('span', { text: '投标文件抽取进度' }));
+  var stopSub = el('button', { style: 'padding:2px 10px;font-size:12px;' +
+    'border-color:#e8b4b4;color:#c0392b', text: '停止提交' });
+  stopSub.onclick = function () {
+    if (!confirm('停止本次抽取？已完成的单位会保留，未开始的将不再处理。')) return;
+    stopSub.disabled = true;
+    stopSub.textContent = '停止中…';
+    fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 任务: 'submit_stop', 参数: { 批次: bid } }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) { alert('停止失败：' + r.error); stopSub.disabled = false;
+          stopSub.textContent = '停止提交'; }
+      }).catch(function (e) { alert('停止失败：' + e.message); });
+  };
+  title.appendChild(stopSub);
+  var stageLine = el('div', { style: 'font-size:13px;color:#1f2733;margin-bottom:6px',
+    text: '准备中…' });
+  var barWrap = el('div', { style: 'height:16px;background:var(--c-line);border-radius:8px;' +
+    'overflow:hidden;margin-bottom:6px' });
+  var bar = el('div', { style: 'height:100%;width:0%;background:var(--c-info);' +
+    'transition:width .35s ease' });
+  barWrap.appendChild(bar);
+  var meta = el('div', { style: 'font-size:12px;color:var(--c-mute2);line-height:1.8' });
+  var detail = el('div', { style: 'font-size:12px;color:var(--c-mute2);line-height:1.7;' +
+    'margin-top:6px' });
+  box.appendChild(title);
+  box.appendChild(stageLine);
+  box.appendChild(barWrap);
+  box.appendChild(meta);
+  box.appendChild(detail);
+  var units = document.getElementById('units');
+  if (units && units.parentNode) units.parentNode.insertBefore(box, units);
+  else document.body.appendChild(box);
+
+  var timer = null;
+  var failCount = 0;
+  function stop() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    setBtnBusy(btn, false);
+  }
+  function tick() {
+    fetch('/api/submit_progress?batch=' + encodeURIComponent(bid))
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        failCount = 0;   // 请求成功即清零失败计数
+        var st = r['批次'];
+        if (!st) {
+          // G15：批次不存在 = 失败（可能服务重启），明确提示，不静默当完成
+          stop();
+          m.style.color = 'var(--c-err)';
+          m.textContent = '提交进度查询失败：' +
+            (r.error || '批次不存在（可能服务已重启，请刷新页面查看队列）');
+          return;
+        }
+        var pct = Math.max(0, Math.min(100, st['进度'] || 0));
+        bar.style.width = pct.toFixed(1) + '%';
+        stageLine.textContent = (st['阶段'] || '') +
+          (st['当前单位'] ? '　·　' + st['当前单位'] : '') +
+          '　' + pct.toFixed(0) + '%';
+        var eta = st['预计剩余秒'];
+        meta.textContent = '已用 ' + fmtSec(st['已用秒']) +
+          '　预计剩余 ' + (st['完成'] ? '0 秒' : fmtSec(eta)) +
+          '　单位 ' + (st['已完成单位'] || 0) + '/' + (st['总单位'] || 0) +
+          (st['已唤醒'] ? '　已唤醒 agent' : '');
+        // 各单位明细
+        detail.innerHTML = '';
+        var ks = Object.keys(st['明细'] || {});
+        ks.forEach(function (k) {
+          var d = st['明细'][k] || {};
+          var line = el('div', { text: '· ' + k + '：' + (d['阶段'] || '') +
+            (d['说明'] ? '（' + d['说明'] + '）' : '') });
+          detail.appendChild(line);
+        });
+        if (st['完成']) {
+          stop();
+          if (stopSub && stopSub.parentNode) stopSub.parentNode.removeChild(stopSub);
+          if (st['已停止']) {
+            m.style.color = 'var(--c-est)';
+            m.textContent = '已停止：抽取被中断（已完成 ' +
+              (st['已完成单位'] || 0) + '/' + (st['总单位'] || 0) +
+              ' 个单位，用时 ' + fmtSec(st['已用秒']) + '）';
+            loadQueue(); loadUnits(); loadSessionHealth();
+            return;
+          }
+          if (st['失败']) {
+            m.style.color = 'var(--c-err)';
+            m.textContent = '抽取失败：' + st['失败'];
+          } else {
+            m.style.color = 'var(--c-act)';
+            var made = st['已提交'] || [];
+            m.textContent = '提交完成（用时 ' + fmtSec(st['已用秒']) + '）：' +
+              (made.length ? made.map(function (x) { return x['投标单位']; }).join('、')
+                           : '无新建任务') +
+              (st['已唤醒'] ? '　已唤醒 agent 自动处理'
+                            : ('　唤醒失败：' + (st['唤醒说明'] || ''))) +
+              (skip && skip.length ? '　跳过 ' + skip.length + ' 个' : '');
+          }
+          loadQueue(); loadUnits(); loadSessionHealth();
+          setTimeout(function () {
+            var b = document.getElementById('submitProg');
+            if (b) b.style.opacity = '0.55';
+          }, 2500);
+          return;
+        }
+        timer = setTimeout(tick, 700);
+      })
+      .catch(function (e) {
+        // G15：失败计数超 20 次（约 30 秒）就停，明确提示而不是无限重试
+        failCount++;
+        if (failCount > 20) {
+          stop();
+          m.style.color = 'var(--c-err)';
+          m.textContent = '进度查询连续失败，已停止：' + e.message;
+          return;
+        }
+        timer = setTimeout(tick, 1500);
+      });
+  }
+  tick();
+}
+
+function isEditing() {
+  var a = document.activeElement;
+  return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' ||
+                  a.isContentEditable));
+}
+// 定时刷新：正在输入时跳过，避免重绘打断输入、抢走焦点与滚动位置
+setInterval(function () { if (!isEditing()) loadQueue(); }, 5000);
+setInterval(function () {
+  if (!isEditing() && curProject().名称) loadBusy();   // U6：忙碌条每 5 秒跟着队列刷新
+}, 5000);
+setInterval(function () { if (!isEditing()) loadUnits(); }, 5000);
+// 评分明细不轮询重绘（表格大、会闪），仅在「已完成任务数」变化时刷新
+var _lastDone = -1;
+setInterval(function () {
+  if (isEditing()) return;
+  var pj = curProject().名称;
+  if (!pj) return;
+  fetch('/api/queue?project=' + encodeURIComponent(pj))
+    .then(function (r) { return r.json(); })
+    .then(function (list) {
+      var done = (list || []).filter(function (t) {
+        return t['状态'] === '已完成'; }).length;
+      if (_lastDone >= 0 && done !== _lastDone) loadScores();
+      _lastDone = done;
+    }).catch(function () {});
+}, 5000);
+loadUnits();
+loadQueue();
+
+document.getElementById('btnSelfCheck').onclick = function () {
+  var p = curProject();
+  var m = document.getElementById('amsg');
+  var box = document.getElementById('autoResult');
+  if (!p.名称) { alert('请先在「项目信息」里填写项目名称'); return; }
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '自检中…';
+  box.innerHTML = '';
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'selfcheck', 参数: { 项目: p.名称 } })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) { m.style.color = 'var(--c-err)'; m.textContent = '自检失败：' + r.error; return; }
+    m.style.color = 'var(--c-act)';
+    m.textContent = '自检完成：' + r['单位数'] + ' 家单位';
+    (r['结果'] || []).forEach(function (u) {
+      var card = el('div', { style: 'border:1px solid var(--c-line2);border-radius:8px;padding:10px 12px;margin-bottom:12px' });
+      card.appendChild(el('div', { style: 'font-weight:700;margin-bottom:6px;color:#1f2733',
+        text: u['投标单位'] }));
+      card.appendChild(el('div', { style: 'font-size:12px;color:var(--c-mute2);margin-bottom:8px',
+        text: '页数 ' + (u['页数'] || '-') + '　中文 ' + (u['中文字符'] || 0) +
+              ' 字（' + (u['中文占比'] || 0) + '%）　文字层 ' + (u['文字层'] || '-') +
+              '　扫描页图片 ' + (u['扫描页图片数'] || 0) + ' 张' +
+              '　简历表页数 ' + (u['简历表页数'] || 0) +
+              '　配备表总人数 ' + (u['配备表总人数'] === null ? '未载明' : u['配备表总人数']) }));
+      var TH = 'text-align:left;padding:4px 6px;border-bottom:1px solid var(--c-line2);font-size:12px;color:var(--c-mute2)';
+      var td = 'padding:4px 6px;font-size:12px';
+      var tbody = el('tbody', {});
+      (u['检查'] || []).forEach(function (c) {
+        var st = c['状态'] || (c['找到'] ? '找到' : '未找到');
+        var col = st === '找到' ? 'var(--c-act)' : (st === '未找到' ? 'var(--c-err)' : 'var(--c-est)');
+        tbody.appendChild(el('tr', { style: 'border-bottom:1px solid #f2f5f9' }, [
+          el('td', { style: td + ';font-weight:600', text: c['项目'] }),
+          el('td', { style: td + ';color:' + col + ';font-weight:700', text: st }),
+          el('td', { style: td + ';color:var(--c-mute2)',
+            text: (c['命中页数'] ? c['命中页数'] + ' 页　' : '') +
+                  ((c['前几页'] || []).length ? '前几页 ' + c['前几页'].join('、') : '') +
+                  (c['说明'] ? '　' + c['说明'] : '') })
+        ]));
+      });
+      var thead = el('tr', {}, [
+        el('th', { style: TH, text: '检查项' }),
+        el('th', { style: TH, text: '结果' }),
+        el('th', { style: TH, text: '位置/说明' })
+      ]);
+      card.appendChild(el('div', { class: 'tablewrap' }, [
+        el('table', { style: 'width:100%;border-collapse:collapse' },
+          [el('thead', {}, [thead]), tbody])
+      ]));
+      (u['提示'] || []).forEach(function (t) {
+        card.appendChild(el('div', { class: 'hint err', style: 'margin:6px 0 0', text: '⚠ ' + t }));
+      });
+      box.appendChild(card);
+    });
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '自检失败：' + e.message;
+  });
+};
+
+
+function loadProjects() {
+  fetch('/api/project').then(function (r) { return r.json(); }).then(function (list) {
+    var box = document.getElementById('plist');
+    if (!box) return;
+    box.innerHTML = '';
+    var cur = (typeof curProject === 'function' ? curProject().名称 : '') || '';
+    list = list || [];
+    // 没选项目：只给一句引导，不展示任何项目的保存路径（避免看起来像"已选项目"）
+    if (!cur) {
+      box.appendChild(el('div', { class: 'hint', text: list.length
+        ? ('尚未选择项目。已保存 ' + list.length + ' 个项目，可在右上角下拉选择；'
+           + '要新建就在上面填名称后点「保存」。')
+        : '尚未选择项目，也还没有已保存的项目。' }));
+      return;
+    }
+    var mine = null;
+    list.forEach(function (p) { if (p['项目名称'] === cur) mine = p; });
+    if (!mine) {
+      box.appendChild(el('div', { class: 'hint', text:
+        '「' + cur + '」尚未保存到磁盘，点「保存」建目录并写入 项目信息.json。' }));
+      return;
+    }
+    box.appendChild(el('div', { class: 'hint ok', text:
+      (mine['项目名称'] || '') + '　编号：' + (mine['项目编号'] || '（未填）') +
+      '　状态：' + (mine['状态'] || '进行中') }));
+    box.appendChild(el('div', { class: 'hint', text:
+      '路径：' + (mine['目录'] || '') }));
+  }).catch(function () {});
+}
+
+// 项目信息栏的状态提示：第一行结果，第二行保存路径（含项目信息.json 全路径）
+function saveMsg(box, r) {
+  if (!box) return;
+  box.innerHTML = '';
+  box.style.color = '';
+  box.appendChild(el('span', {
+    style: 'color:var(--c-act);font-weight:600', text: '保存成功' }));
+  var path = (r && (r['文件'] || r['目录'])) || '';
+  if (path) {
+    box.appendChild(el('span', {
+      style: 'display:block;color:var(--c-mute2);font-size:12px;' +
+             'word-break:break-all;line-height:1.5',
+      text: '路径：' + path }));
+  }
+}
+
+// 没选项目时，本栏回到初始态：不显示任何"上一个项目"的保存结果
+function pjMsgReset() {
+  var box = document.getElementById('pmsg2');
+  if (box) { box.innerHTML = ''; box.textContent = ''; box.style.color = ''; }
+}
+
+document.getElementById('btnProjSave').onclick = function () {
+  var name = document.getElementById('pname').value.trim();
+  var no = document.getElementById('pno').value.trim();
+  var m = document.getElementById('pmsg2');
+  if (!name) { alert('请填写项目名称'); return; }
+  m.style.color = 'var(--c-mute2)';
+  m.textContent = '保存中…';
+  fetch('/api/project', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 项目名称: name, 项目编号: no })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) {
+      m.innerHTML = '';
+      m.style.color = 'var(--c-err)';
+      m.textContent = '保存失败：' + r.error;
+      return;
+    }
+    saveMsg(m, r);
+    // 关键：保存后把界面整体切到该项目（清空各模块再按新项目重载），
+    // 否则其他模块仍显示上一个项目的内容
+    loadProjects();
+    loadProjectList();
+    setTimeout(function () {
+      applyProject(name);
+      var sel = document.getElementById('projSel');
+      if (sel) sel.value = name;
+      // applyProject 会清空各模块状态文字（含本栏），所以这里必须再写一次，
+      // 否则"保存成功"只闪一下就没了
+      saveMsg(m, r);
+    }, 60);
+  }).catch(function (e) {
+    m.style.color = 'var(--c-err)';
+    m.textContent = '保存失败：' + e.message;
+  });
+};
+
+loadProjects();
+function loadTenders() {
+  var pj = curProject().名称;
+  if (!pj) {
+    document.getElementById('tenders').innerHTML = '';
+    document.getElementById('tmsg').textContent = '请先在「项目信息」里选择项目';
+    return;
+  }
+  fetch('/api/tenders?project=' + encodeURIComponent(pj))
+    .then(function (r) { return r.json(); }).then(function (list) {
+    var box = document.getElementById('tenders');
+    box.innerHTML = '';
+    if (!list.length) {
+      box.appendChild(el('div', { class: 'muted', text: '尚无招标文件' }));
+      return;
+    }
+    list.forEach(function (x) {
+      box.appendChild(el('div', { class: 'hint ok', text:
+        (x['文件'] || '') + '　段落 ' + (x['段落数'] || 0) + '　表格 ' +
+        (x['表格数'] || 0) + '　总字符 ' + (x['总字符'] || 0) +
+        '　中文 ' + (x['中文字符'] || 0) + '（' + (x['中文占比'] || 0) + '%）' }));
+      var tb = x['表格摘要'] || [];
+      if (tb.length) {
+        var pre = el('div', { class: 'muted', style: 'font-size:12px;margin:2px 0 8px 12px' });
+        tb.slice(0, 8).forEach(function (t) {
+          pre.appendChild(el('div', { text:
+            '　表' + t['表序'] + '（' + t['行数'] + '行）：' +
+            (t['表头'] || []).join(' | ').slice(0, 100) }));
+        });
+        box.appendChild(pre);
+      }
+    });
+  }).catch(function () {});
+}
+
+function curProject() {
+  var a = document.getElementById('pname');
+  var b = document.getElementById('pno');
+  return { 名称: (a && a.value || '').trim(), 编号: (b && b.value || '').trim() };
+}
+
+document.getElementById('btnTender').onclick = function () {
+  var f = document.getElementById('tfile').files[0];
+  var m = document.getElementById('tmsg');
+  var p = curProject();
+  if (!p.名称) { alert('请先在「项目信息」里填写项目名称'); return; }
+  if (!f) { alert('请先选择招标文件（.doc / .docx / .md / .pdf）'); return; }
+  m.textContent = '保存中…（大文件较慢）';
+  fetch('/api/tender?name=' + encodeURIComponent(f.name) +
+        '&project=' + encodeURIComponent(p.名称),
+        { method: 'POST', body: f })
+    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) { m.textContent = '失败：' + r.error; return; }
+      var x = r['结果'];
+      m.textContent = '已保存：' + x['格式'] + '　段落 ' + x['段落数'] +
+        '　表格 ' + x['表格数'] + '　总字符 ' + x['总字符'] +
+        '（中文 ' + x['中文占比'] + '%）';
+      if (x['提示']) { m.textContent += '　⚠ ' + x['提示']; }
+      loadTenders();
+    })
+    .catch(function (e) { m.textContent = '失败：' + e.message; });
+};
+
+document.getElementById('btnTenderCheck').onclick = function () {
+  var m = document.getElementById('tmsg');
+  var box = document.getElementById('tcheck');
+  var p = curProject();
+  if (!p.名称) { alert('请先在「项目信息」里填写项目名称'); return; }
+  m.textContent = '校验中…';
+  box.innerHTML = '';
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 任务: 'check_rules', 参数: { 项目: p.名称 } })
+  }).then(function (r) { return r.json(); }).then(function (r) {
+    if (!r.ok) { m.textContent = '失败：' + r.error; return; }
+    m.textContent = '你设置合计 ' + r['你设置合计'] + ' 分；招标文件合计 ' +
+      (r['招标文件合计'] === null ? '未识别' : r['招标文件合计']) +
+      '；问题 ' + r['问题数'] + ' 处';
+    (r['问题'] || []).forEach(function (x) {
+      var bad = x['级别'] !== '通过';
+      box.appendChild(el('div', { class: 'hint ' + (bad ? 'err' : 'ok'),
+        text: '[' + x['级别'] + '] ' + (x['项'] || '') + '　' + x['说明'] }));
+    });
+  }).catch(function (e) { m.textContent = '失败：' + e.message; });
+};
+
+loadTenders();
+function loadScores() {
+  var pj = curProject().名称;
+  var box0 = document.getElementById('scores');
+  var sum0 = document.getElementById('summary');
+  if (!pj) {
+    if (box0) { box0.innerHTML = ''; box0.appendChild(el('div', { class: 'muted', text: '请先在「项目信息」里选择或填写项目名称' })); }
+    if (sum0) sum0.innerHTML = '';
+    return;
+  }
+  fetch('/api/scores?project=' + encodeURIComponent(pj))
+    .then(function (r) { return r.json(); }).then(function (list) {
+    var box = document.getElementById('scores');
+    var sum = document.getElementById('summary');
+    box.innerHTML = '';
+    sum.innerHTML = '';
+    if (!list.length) {
+      box.appendChild(el('div', { class: 'muted', text: '尚无评分结果' }));
+      sum.appendChild(el('div', { class: 'hint', text: '尚无评分结果' }));
+      return;
+    }
+    // 只保留真正的复核结果（有 评分 数组的），并把新旧两种字段名统一
+    list = list.filter(function (S) { return (S['评分'] || []).length > 0; });
+    list.forEach(function (S) {
+      var st = S['小计'];
+      if (typeof st === 'number' || st === null || st === undefined) {
+        var und = 0;
+        (S['评分'] || []).forEach(function (it) {
+          // 只把「确实没有得分」的项算作未定；标了需人工但已给分的不算
+          if (it['得分'] === null || it['得分'] === undefined) und += (it['分值'] || 0);
+        });
+        S['小计'] = { 已定: (typeof st === 'number' ? st : 0),
+                      上限: S['满分'] || 0, 未定: und };
+      }
+      (S['评分'] || []).forEach(function (it) {
+        if (it['序'] === undefined || it['序'] === null) it['序'] = it['序号'];
+        if (it['应得分'] === undefined) it['应得分'] = it['得分'];
+        if (it['状态'] === undefined || it['状态'] === null) {
+          it['状态'] = it['需人工'] ? '待人工确认'
+            : (it['得分'] === null || it['得分'] === undefined ? '待定' : '已定');
+        }
+        // 「待核」不再写进出处（避免让人误以为该页 OCR 不可信），
+        // 而是用 待核类型/待核原因 单独表达
+        if (it['需人工'] && !it['待核类型']) {
+          it['待核类型'] = '需人工';
+        }
+      });
+    });
+    // 复核结果：一张表，一行一个单位（投标人 / 评分项 / 置信度 / 合计）
+    var sumHead = el('div', { style: 'display:flex;align-items:center;gap:10px;' +
+        'margin:12px 0 2px;font-weight:700;font-size:14px' }, [
+      el('span', { text: '复核得分汇总' }),
+      el('span', { style: 'font-weight:400;color:var(--c-mute);font-size:12px',
+        text: list.length + ' 个单位' })
+    ]);
+    var cellTh = 'padding:8px 12px;text-align:left;border-bottom:2px solid var(--c-line2);' +
+                 'background:#f7f9fc;color:var(--c-mute2);font-size:12px;font-weight:600';
+    var cellTd = 'padding:8px 12px;border-bottom:1px solid var(--c-line)';
+    var sumTbl = el('table', { style: 'width:100%;border-collapse:collapse;font-size:13px;' +
+        'margin:6px 0 16px' }, [
+      el('thead', {}, [el('tr', {}, [
+        el('th', { style: cellTh, text: '投标人' }),
+        el('th', { style: cellTh + ';width:230px', text: '评分项' }),
+        el('th', { style: cellTh + ';width:200px', text: '置信度' }),
+        el('th', { style: cellTh + ';width:130px', text: '合计' })
+      ])]),
+      el('tbody', {}, list.map(function (S, idx) {
+        var st = S['小计'] || {};
+        var items = S['评分'] || [];
+        function cnt(lv) {
+          return items.filter(function (x) { return x['置信度'] === lv; }).length;
+        }
+        var tr = el('tr', { style: 'cursor:pointer', title: '跳到该单位的明细' }, [
+          el('td', { style: cellTd, text: S['投标人'] || '' }),
+          el('td', { style: cellTd + ';color:var(--c-mute2)',
+            text: items.length + ' 项　已定 ' + (st['已定'] || 0) +
+                  '　未定 ' + (st['未定'] || 0) }),
+          el('td', { style: cellTd + ';color:var(--c-mute2)',
+            text: '高 ' + cnt('高') + '　中 ' + cnt('中') + '　低 ' + cnt('低') }),
+          el('td', { style: cellTd + ';font-weight:700;color:var(--c-act);white-space:nowrap',
+            text: (st['已定'] || 0) + ' / ' + (st['上限'] || 0) + ' 分' })
+        ]);
+        tr.addEventListener('mouseenter', function () { tr.style.background = 'var(--c-info-bg)'; });
+        tr.addEventListener('mouseleave', function () { tr.style.background = ''; });
+        tr.addEventListener('click', function () {
+          var d = document.getElementById('detail-' + idx);
+          if (!d) return;
+          d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          d.classList.remove('flash');
+          void d.offsetWidth;          // 重启动画
+          d.classList.add('flash');
+        });
+        return tr;
+      }))
+    ]);
+    sum.appendChild(sumHead);
+    sum.appendChild(sumTbl);
+    list.forEach(function (S, idx) {
+      var st = S['小计'] || {};
+      box.appendChild(el('div', { id: 'detail-' + idx,
+        style: 'margin-bottom:22px;padding:10px 12px;border:1px solid var(--c-line2);' +
+               'border-radius:8px;background:#fff;scroll-margin-top:14px' }, [
+        el('div', { style: 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap' }, [
+          el('b', { style: 'font-size:15px', color: '#1f2733',
+            text: '明细 ' + (idx + 1) + '　' + (S['投标人'] || '') }),
+          el('span', { class: 'muted', text: (S['工程'] || '') }),
+          el('span', { style: 'margin-left:auto;font-size:16px;color:var(--c-info);font-weight:800',
+            text: (st['已定'] || 0) + ' / ' + (st['上限'] || 0) + ' 分' }),
+          (st['未定'] ? el('span', { class: 'hint err', style: 'margin:0',
+            text: '待定 ' + st['未定'] + ' 分' }) : null)
+        ]),
+        el('div', { class: 'tablewrap' }, [
+          el('table', { style: 'width:100%;border-collapse:collapse;font-size:13px' }, [
+            el('thead', {}, [el('tr', {}, [
+              el('th', { style: 'text-align:left;padding:6px;border-bottom:2px solid var(--c-line2)', text: '序' }),
+              el('th', { style: 'text-align:left;padding:6px;border-bottom:2px solid var(--c-line2)', text: '评分项' }),
+              el('th', { style: 'padding:6px;border-bottom:2px solid var(--c-line2)', text: '分值' }),
+              el('th', { style: 'padding:6px;border-bottom:2px solid var(--c-line2)', text: '应得分' }),
+              el('th', { style: 'text-align:left;padding:6px;border-bottom:2px solid var(--c-line2)', text: '依据' }),
+              el('th', { style: 'padding:6px;border-bottom:2px solid var(--c-line2)', text: '出处' }),
+              el('th', { style: 'padding:6px;border-bottom:2px solid var(--c-line2)', text: '置信度' })
+            ])]),
+            el('tbody', {}, (S['评分'] || []).map(function (it) {
+              var v = it['应得分'];
+              var und = (v === null || v === undefined);
+              return el('tr', { style: 'border-bottom:1px solid var(--c-line)' }, [
+                el('td', { style: 'padding:6px', text: it['序'] || '' }),
+                el('td', { style: 'padding:6px', text: it['名称'] || '' }),
+                el('td', { style: 'padding:6px;text-align:center', text: it['分值'] }),
+                el('td', { style: 'padding:6px;text-align:center;font-weight:700;color:' +
+                  (und ? 'var(--c-est)' : 'var(--c-act)'), text: und ? '待定' : String(v) }),
+                (function () {
+                  var td = el('td', { style: 'padding:6px;font-size:12px;color:var(--c-mute2)',
+                    text: (it['依据'] || it['计算'] || '') });
+                  if (it['需人工']) {
+                    var why = it['待核原因'] || it['连带说明'];
+                    if (!why) {
+                      // 兜底：把手上已有的信息摆出来，别让读者面对一句空话
+                      var bits = [];
+                      if (it['置信度']) bits.push('置信度' + it['置信度']);
+                      if (it['出处']) bits.push('出处 ' + it['出处']);
+                      why = '要点：' + (it['名称'] || '') +
+                        (it['分值'] !== undefined ? ('（' + it['分值'] + ' 分）') : '') +
+                        '\n疑问：未填写待核原因' +
+                        (bits.length ? '（' + bits.join('，') + '）' : '') +
+                        '——需补：要点 / 出处 / 疑问';
+                    }
+                    td.appendChild(el('div', {
+                      style: 'margin-top:5px;padding:4px 7px;border-radius:4px;' +
+                             'background:var(--c-est-bg);color:var(--c-est);font-size:11.5px;' +
+                             'line-height:1.55;white-space:pre-line',
+                      text: '⚠ 待核（' + (it['待核类型'] || '需人工') + '）：\n' + why }));
+                  }
+                  return td;
+                })(),
+                el('td', { style: 'padding:6px;font-size:12px', text: it['出处'] || '' }),
+                el('td', { style: 'padding:6px;text-align:center;font-size:12px', text: it['置信度'] || '' })
+              ]);
+            }))
+          ])
+        ])
+      ]));
+    });
+  }).catch(function (e) {
+    document.getElementById('scores').textContent = '读取失败：' + e.message;
+  });
+}
+loadProjectList();
+loadUnits();
+loadScores();
+loadEngine();
+loadVersion();
+loadSessionHealth();
+loadBids();
+boot();
+initCollapse();
+frontLog('info', '前端初始化完成');
+</script>
+</body>
+</html>
