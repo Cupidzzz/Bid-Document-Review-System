@@ -40,7 +40,7 @@ rem Server output stays UTF-8 regardless of console code page
 rem Force Python output to UTF-8 to avoid log mojibake across code pages.
 if not defined PYTHONIOENCODING set "PYTHONIOENCODING=utf-8"
 set "PY=python"
-if not exist "%PY%" set "PY=python"
+rem python must be on PATH (public version)
 
 rem --- 1) wake target ---
 rem --- 1) print which session the wake will target (binding file wins) ---

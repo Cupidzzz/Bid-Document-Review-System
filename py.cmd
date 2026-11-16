@@ -14,8 +14,9 @@ set "PYTHONIOENCODING=utf-8"
 set "PYTHONUNBUFFERED=1"
 
 rem 找不到解释器就把原因写进 py_last.log，并用 9009（命令未找到的惯用码）退出
-if not exist "%PY%" (
-  echo [py.cmd] interpreter not found: %PY%>"%LOG%"
+where python >nul 2>nul
+if errorlevel 1 (
+  echo [py.cmd] python not found in PATH>"%LOG%"
   exit /b 9009
 )
 
