@@ -269,7 +269,7 @@ def resolve_session(explicit=None, project=None):
 # ---------------- 新建会话（v1.3.0：项目第一次复核时自动建） ----------------
 
 AUTO_SESSION_ENV = 'ENABLE_AUTO_SESSION'
-WORKSPACE = os.path.dirname(HERE)          # D:\DSH\投标文件复核
+WORKSPACE = os.path.dirname(HERE)          # 工作区根目录（pipeline 的上一级）
 WORKSPACE_JSON = os.path.join(
     os.environ.get('APPDATA') or os.path.expanduser('~/AppData/Roaming'),
     'dsh-desktop', 'harness', 'storages', 'workspace.json')
