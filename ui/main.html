@@ -242,6 +242,7 @@ color:var(--c-info);font-size:13px;margin-bottom:12px}
       <button id="btnGenPoints">生成要点</button>
       <button id="btnViewPoints">查看要点</button>
       <button id="btnViewSummary">查看汇总</button>
+      <button id="btnIssues" title="查看复核过程中发现的问题反馈（口径/识别/证据/规则）">问题反馈</button>
       <button id="btnArchive2">归档</button>
       <span id="engineBadge" class="muted" title=""></span>
       <span id="sessBadge" class="muted" title=""></span>
@@ -1893,6 +1894,30 @@ document.getElementById('btnViewSummary').onclick = function () {
 };
 
 document.getElementById('btnReloadScores').onclick = function () { loadScores(); loadEngine(); loadVersion(); loadSessionHealth(); };
+
+// 问题反馈清单：读 /api/issues，用 dialog 展示
+document.getElementById('btnIssues').onclick = function () {
+  var pj = curProject().名称;
+  if (!pj) { alert('请先选择项目'); return; }
+  fetch('/api/issues?project=' + encodeURIComponent(pj))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var items = d['问题反馈'] || [];
+      if (!items.length) {
+        dlgAlert('问题反馈', '本项目暂无复核问题反馈。');
+        return;
+      }
+      var rows = items.map(function (x, i) {
+        return (i + 1) + '. [' + (x['类别'] || '其他') + '] ' + (x['现象'] || '')
+          + '\n   单位：' + (x['投标单位'] || '') + '｜页：' + (x['涉及页'] || '-')
+          + '｜评分项：' + (x['涉及评分项'] || '-')
+          + (x['建议'] ? '\n   建议：' + x['建议'] : '')
+          + '\n   ' + (x['时间'] || '');
+      }).join('\n');
+      dlgAlert('问题反馈（' + items.length + ' 条）', rows);
+    })
+    .catch(function (e) { alert('读取问题反馈失败：' + e.message); });
+};
 
 // 界面声明自己需要的接口契约号：只有端点/字段不兼容时才需要跟着改
 var UI_REQUIRES_API = 1;

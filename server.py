@@ -988,6 +988,7 @@ AUTO_RESCUE = (os.environ.get('AUTO_RESCUE') or '1') != '0'
 RESCUE_TICK = int(os.environ.get('RESCUE_TICK') or 120)
 RESCUE_LOG = os.path.join(WORK, 'rescue_log.json')
 FRONT_LOG = os.path.join(WORK, 'front_log.json')   # 前端上报的运行/错误日志（最多 300 条）
+ISSUE_LOG = os.path.join(WORK, '复核问题反馈.json')   # agent 复核中发现的问题反馈（最多 500 条）
 _TASK_LOCK = threading.Lock()
 
 
@@ -1071,6 +1072,43 @@ def front_log_add(level, msg, **kw):
             json.dump(items, f, ensure_ascii=False, indent=1)
     except Exception:
         traceback.print_exc()
+
+
+def issue_add(pname, unit, category, note, **kw):
+    """记一条复核问题反馈（最多留 500 条），落盘 work\\复核问题反馈.json。"""
+    try:
+        items = []
+        if os.path.isfile(ISSUE_LOG):
+            try:
+                with open(ISSUE_LOG, encoding='utf-8') as f:
+                    items = json.load(f) or []
+            except Exception:
+                items = []
+        entry = {'时间': now(), '项目': pname, '投标单位': unit,
+                 '类别': category, '现象': note}
+        entry.update(kw)
+        items.append(entry)
+        items = items[-500:]
+        os.makedirs(WORK, exist_ok=True)
+        with open(ISSUE_LOG, 'w', encoding='utf-8') as f:
+            json.dump(items, f, ensure_ascii=False, indent=1)
+    except Exception:
+        traceback.print_exc()
+
+
+def issue_list(pname=''):
+    """读复核问题反馈（可按项目过滤），最新的在前。"""
+    items = []
+    if os.path.isfile(ISSUE_LOG):
+        try:
+            with open(ISSUE_LOG, encoding='utf-8') as f:
+                items = json.load(f) or []
+        except Exception:
+            items = []
+    if pname:
+        items = [x for x in items if (x.get('项目') or '') == pname]
+    items.reverse()
+    return items
 
 
 def _inflight_dump():
@@ -2263,6 +2301,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == '/api/prewarm':
             _prune_prewarm_state()   # L3：返回前清掉已结束超 60 分钟的旧状态
             return self._send(200, _PREWARM_STATE)
+        if p == '/api/issues':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            pname = (qs.get('project') or [''])[0].strip()
+            return self._send(200, {'ok': True, '问题反馈': issue_list(pname),
+                                    '数量': len(issue_list(pname))})
         if p == '/api/engine':
             return self._engine_info()
         if p == '/api/version':
@@ -5980,6 +6023,26 @@ class H(http.server.BaseHTTPRequestHandler):
             '说明': '「未覆盖页」= 有扫描图但尚无 OCR 缓存，建议先 ocr_pages 补识别再检索',
         })
 
+    def _report_issue(self, params):
+        """复核问题反馈：agent 判分中发现口径/识别/证据/规则问题，分类上报。
+
+        参数：项目、投标单位、类别（口径|识别|证据|规则）、现象（必填）、
+              涉及评分项、涉及页、建议。
+        落盘 work\\复核问题反馈.json，前端「问题反馈」清单可见。
+        """
+        pname = (params.get('项目') or '').strip()
+        unit = (params.get('投标单位') or '').strip()
+        cat = (params.get('类别') or '').strip() or '其他'
+        note = (params.get('现象') or '').strip()
+        if not note:
+            return self._err(400, '缺少「现象」参数')
+        issue_add(pname, unit, cat, note,
+                  涉及评分项=(params.get('涉及评分项') or '').strip(),
+                  涉及页=(params.get('涉及页') or '').strip(),
+                  建议=(params.get('建议') or '').strip())
+        return self._send(200, {'ok': True, '任务': 'report_issue',
+                                '已记录': note[:80]})
+
     def _claim(self, params):
         """把某单位的「待处理」任务标记为「处理中」，并记录开始时间。
 
@@ -6624,6 +6687,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if task == 'ocr_search':
             return self._ocr_search(params)
+
+        if task == 'report_issue':
+            return self._report_issue(params)
 
         if task == 'claim':
             return self._claim(params)
