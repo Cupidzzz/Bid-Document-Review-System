@@ -4,3 +4,13 @@ __pycache__/
 server.out.log*
 py_last.log
 *.bak*
+
+# 运行时数据：本地运行会生成，绝不能提交（含投标文件原件、OCR 缓存、复核报告）
+work/
+项目/
+_项目回收站/
+*.pdf
+*.docx
+*.doc
+*.pages/
+.ocr_cache/

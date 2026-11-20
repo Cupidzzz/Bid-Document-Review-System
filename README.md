@@ -17,6 +17,30 @@
 - **不瞎判**：找不到证据标"需人工"，绝不静默给 0 分；
 - **扫描件友好**：无文字层的扫描页自动渲染 + OCR。
 
+## 架构
+
+本仓库是**服务端 + 前端 + OCR 预处理**，真正的**判分由一个外部 AI 智能体**完成：
+
+```
+UI（ui/main.html）
+  ↓ HTTP
+server.py（队列、预处理、OCR 预热、汇总）
+  ↓ 唤醒（wake.py 向 agent 会话注入消息）
+agent（外部 AI 智能体，逐项判分）
+  ↓ POST /api/run（claim / stopcheck / finalize）
+server.py（回填得分、汇总、导出报告）
+```
+
+- **服务端只做**：任务队列、正文抽取、扫描页导出、OCR、结果汇总、导出报告；
+- **判分由 agent 做**：agent 通过 `POST /api/run` 认领任务（claim）、查停止（stopcheck）、
+  判分后结单（finalize）；判分规则在私有的《复核方法.md》里；
+- **唤醒**：`wake.py` 通过环境变量 `DSH_SESSION_ID`（或 `work/wake_target.json`）指定
+  要唤醒的 agent 会话；当前实现面向 DeepSeek Harness（DSH）平台。
+
+> ⚠️ **本仓库不能独立跑出分数**：它需要一个"能读文件 + 调 HTTP 接口"的 AI 智能体当
+> 判分执行器，并配置好唤醒目标（`DSH_SESSION_ID`）。没有 agent，只能跑起 UI、预处理
+> 和 OCR，跑不出评分。
+
 ## 目录
 
 - `server.py` 服务端主程序（路由、队列、预处理、预热、汇总）
