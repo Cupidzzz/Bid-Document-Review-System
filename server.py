@@ -179,7 +179,14 @@ def guess_bidder_name(text, filename=''):
 def safe_name(s, default='未命名'):
     s = re.sub(r'[\\/:*?"<>|\r\n\t]+', '', (s or '')).strip()
     s = re.sub(r'\s+', ' ', s)
-    return (s[:80] or default)
+    # P1-2：拦路径边界（. 和 .. 会指向项目根/上级目录），
+    # 并去掉 Windows 会静默忽略的结尾点/空格，避免目录名歧义。
+    if s in ('.', '..'):
+        return default
+    s = s.rstrip('. ')
+    if not s:
+        return default
+    return s[:80]
 
 
 def guess_project_name(text, filename=''):
@@ -2377,6 +2384,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 if True:
                     rdir = os.path.join(PROJ, proj, '复核报告')
                     for fp in walk_files(rdir, '.json'):
+                        # 重做复核的旧结果归档在 _历史\，不计入当前明细
+                        if os.path.sep + '_历史' + os.path.sep in fp:
+                            continue
                         try:
                             with open(fp, encoding='utf-8') as f:
                                 d = json.load(f)
@@ -4160,7 +4170,7 @@ class H(http.server.BaseHTTPRequestHandler):
                      '不含主观方案分与价格分 |'
                      % ('；'.join('%s × %g%%' % (g['名称'], g['权重'])
                                   for g in _groups), _fz_full))
-        L.append('| 复核依据 | 招标文件《技术标详细审查评分表》'
+        L.append('| 复核依据 | 招标文件所载评分标准'
                  '（逐项对照原文，逐条标注出处页码） |')
         L.append('')
         L.append('> **阅读说明**：本报告每一项得分都标注了证据出处页码与置信度。'
@@ -4467,7 +4477,7 @@ class H(http.server.BaseHTTPRequestHandler):
         # ===== 六、复核方法说明 =====
         L.append('## 六、复核方法与说明')
         L.append('')
-        L.append('- **判分依据**：招标文件《技术标详细审查评分表》原文，'
+        L.append('- **判分依据**：招标文件所载的评分标准与评分办法原文，'
                  '每个项目均重新读取原文，不套用其他项目口径。')
         L.append('- **证据来源**：文字层（PDF 可选中文字）优先；'
                  '文字层无内容时，读取该页全部扫描图并作 OCR，'
@@ -5806,6 +5816,170 @@ class H(http.server.BaseHTTPRequestHandler):
                      '不得当作"没有该材料"；「覆盖.缺失」= 该页没有导出扫描图。')
         })
 
+    def _page_crop(self, params):
+        """裁图：返回某页指定矩形区域放大后的 PNG（base64），供 agent 回原图核对手写/关键字段。
+
+        参数：
+            项目 / 投标单位（必填）、页（必填）
+            x0,y0,x1,y1（原始像素坐标，缺省整页）
+            倍数（默认 2，上限 6）
+        返回：png_base64、原图尺寸、裁切范围、放大后尺寸。
+        """
+        import base64
+
+        pname = (params.get('项目') or '').strip()
+        unit = (params.get('投标单位') or '').strip()
+        page = params.get('页')
+        if not pname:
+            return self._err(400, '缺少「项目」参数')
+        if not unit:
+            return self._err(400, '缺少「投标单位」参数')
+        if page in (None, ''):
+            return self._err(400, '缺少「页」参数')
+        try:
+            page = int(page)
+        except Exception:
+            return self._err(400, '「页」必须是数字')
+        pd = project_dir_for(pname)
+        up = os.path.join(pd, '投标文件', unit) if pd else None
+        if not up or not os.path.isdir(up):
+            return self._err(404, '项目「%s」下没有投标单位「%s」' % (pname, unit))
+        bids = pick_bid_files(up)
+        if not bids:
+            return self._err(400, '「%s」目录下没有投标文件' % unit)
+        pdir = bids[0] + '.pages'
+        if not os.path.isdir(pdir):
+            return self._err(400, '「%s」还没有导出扫描页（.pages 不存在）'
+                             % os.path.basename(bids[0]))
+        import ocr_text as _ot
+        info = _ot.collect_page_images(pdir)
+        per = (info or {}).get('页') or {}
+        imgs = per.get(page) or []
+        if not imgs:
+            return self._err(404, '第 %d 页没有扫描图（可能是文字层页，未导出图片）'
+                             % page)
+        img_path = imgs[0]
+        import cv2
+        import numpy as np
+        try:
+            with open(img_path, 'rb') as f:
+                buf = np.frombuffer(f.read(), dtype=np.uint8)
+            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
+        if img is None:
+            return self._err(500, '读图失败：%s' % os.path.basename(img_path))
+        h, w = img.shape[:2]
+
+        def _n(k, default):
+            v = params.get(k)
+            try:
+                return int(float(v))
+            except Exception:
+                return default
+
+        x0 = max(0, min(w - 1, _n('x0', 0)))
+        y0 = max(0, min(h - 1, _n('y0', 0)))
+        x1 = max(x0 + 1, min(w, _n('x1', w)))
+        y1 = max(y0 + 1, min(h, _n('y1', h)))
+        try:
+            zoom = float(params.get('倍数') or 2)
+        except Exception:
+            zoom = 2.0
+        zoom = max(1.0, min(6.0, zoom))
+        crop = img[y0:y1, x0:x1]
+        if zoom != 1.0:
+            crop = cv2.resize(crop, None, fx=zoom, fy=zoom,
+                              interpolation=cv2.INTER_CUBIC)
+        ok, enc = cv2.imencode('.png', crop)
+        if not ok:
+            return self._err(500, 'PNG 编码失败')
+        b64 = base64.b64encode(enc.tobytes()).decode('ascii')
+        return self._send(200, {
+            'ok': True, '任务': 'page_crop', '页': page,
+            '文件': os.path.basename(img_path), '原图尺寸': [w, h],
+            '裁切': [x0, y0, x1, y1], '倍数': zoom,
+            '尺寸': [crop.shape[1], crop.shape[0]], 'png_base64': b64})
+
+    def _ocr_search(self, params):
+        """扫描页 OCR 全文检索（S14）：遍历该册 .ocr_cache，返回关键词命中页/句。
+
+        参数：
+            项目 / 投标单位（必填）、关键词（列表或逗号/空格分隔）、可选 文件/册
+        返回：命中[{页,关键词,命中句}]、命中页数、已覆盖页数、未覆盖页（有图但无缓存）。
+        """
+        pname = (params.get('项目') or '').strip()
+        unit = (params.get('投标单位') or '').strip()
+        if not pname:
+            return self._err(400, '缺少「项目」参数')
+        if not unit:
+            return self._err(400, '缺少「投标单位」参数')
+        raw_kw = params.get('关键词')
+        if isinstance(raw_kw, (list, tuple)):
+            kws = [str(k).strip() for k in raw_kw if str(k).strip()]
+        else:
+            kws = [k.strip() for k in re.split(r'[,，、\s]+', str(raw_kw or ''))
+                   if k.strip()]
+        if not kws:
+            return self._err(400, '缺少「关键词」参数')
+        pd = project_dir_for(pname)
+        up = os.path.join(pd, '投标文件', unit) if pd else None
+        if not up or not os.path.isdir(up):
+            return self._err(404, '项目「%s」下没有投标单位「%s」' % (pname, unit))
+        bids = pick_bid_files(up)
+        if not bids:
+            return self._err(400, '「%s」目录下没有投标文件' % unit)
+        want_file = (params.get('文件') or params.get('册') or '').strip()
+        bid = None
+        if want_file:
+            bid = next((x for x in bids
+                        if os.path.basename(x) == want_file
+                        or os.path.splitext(os.path.basename(x))[0] == want_file),
+                       None)
+        if not bid:
+            bid = bids[0]
+        pdir = bid + '.pages'
+        if not os.path.isdir(pdir):
+            return self._err(400, '「%s」还没有导出扫描页（.pages 不存在）'
+                             % os.path.basename(bid))
+        import ocr_text as _ot
+        cache_dir = os.path.join(pdir, _ot.CACHE_DIRNAME)
+        hits, covered = [], set()
+        if os.path.isdir(cache_dir):
+            for fn in sorted(os.listdir(cache_dir)):
+                if not fn.endswith('.json'):
+                    continue
+                fp = os.path.join(cache_dir, fn)
+                try:
+                    with open(fp, encoding='utf-8') as f:
+                        d = json.load(f)
+                except Exception:
+                    continue
+                txt = (d or {}).get('文字') if isinstance(d, dict) else ''
+                if not isinstance(txt, str) or not txt:
+                    continue
+                m = re.match(r'[pP](\d+)', fn)
+                page = int(m.group(1)) if m else None
+                if page is not None:
+                    covered.add(page)
+                for kw in kws:
+                    if kw not in txt:
+                        continue
+                    idx = txt.find(kw)
+                    ctx = txt[max(0, idx - 20):idx + len(kw) + 20].replace('\n', ' ')
+                    hits.append({'页': page, '关键词': kw, '命中句': ctx})
+                    break
+        info = _ot.collect_page_images(pdir)
+        per = (info or {}).get('页') or {}
+        uncovered = sorted(p for p in per if p not in covered)
+        return self._send(200, {
+            'ok': True, '任务': 'ocr_search', '项目': pname, '投标单位': unit,
+            '关键词': kws, '命中': hits,
+            '命中页数': len(set(h['页'] for h in hits if h['页'] is not None)),
+            '已覆盖页数': len(covered), '未覆盖页': uncovered,
+            '说明': '「未覆盖页」= 有扫描图但尚无 OCR 缓存，建议先 ocr_pages 补识别再检索',
+        })
+
     def _claim(self, params):
         """把某单位的「待处理」任务标记为「处理中」，并记录开始时间。
 
@@ -6444,6 +6618,12 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if task == 'ocr_pages':
             return self._ocr_pages(params)
+
+        if task == 'page_crop':
+            return self._page_crop(params)
+
+        if task == 'ocr_search':
+            return self._ocr_search(params)
 
         if task == 'claim':
             return self._claim(params)

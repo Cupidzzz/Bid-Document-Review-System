@@ -20,7 +20,7 @@
 
 import os
 
-__version__ = '1.11.0'
+__version__ = '1.12.0'
 
 # 接口契约号：新增/改字段不动它，**不兼容**才 +1
 API_VERSION = 1

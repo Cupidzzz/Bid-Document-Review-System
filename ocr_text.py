@@ -377,6 +377,8 @@ def _sig(img_path, max_side):
             'mtime': int(st.st_mtime),
             'max_side': int(max_side or 0),
             'fp': fp,
+            # P1：算法版本。改了检测参数/补识逻辑就 bump 这个键，旧缓存自然失效。
+            'algo': 'ppocrv4+gapfill1',
             # 只有非默认引擎才带该键：默认档的历史缓存继续有效，
             # 而 OpenVINO 与 ONNX Runtime 的浮点结果不同，两套缓存不得混用。
             **({'engine': _ENGINE_NAME} if _ENGINE_NAME != 'onnxruntime' else {})}
@@ -491,6 +493,114 @@ def runtime_stats():
 
 # ---------------- 识别 ----------------
 
+# P0-1（2026-11-17）：手写填空被检测器切成两段时，行内空隙补识。
+# 触发条件：同一行相邻两框之间的空隙宽度 > 1.0×行高（手写大字 + 下划线常导致中间不出框）。
+_GAP_TEMPLATE = re.compile(r'_[0-9]*\s*(年|月|日|元|万|%|％)|签订日期|落款|签订时间')
+
+
+def _gap_fill(img, res, h_img, w_img):
+    """行内空隙补识：按 x 顺序把空隙里补识别出的字插回该行，返回完整文本（多行）。
+    没有可补的空隙时返回 None（表示无需改动，沿用原文本）。"""
+    import cv2
+    import numpy as np
+    if not res:
+        return None
+    # 1) 解析框
+    boxes = []
+    for r in res:
+        if len(r) < 3:
+            continue
+        box = r[0]
+        try:
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+        except Exception:
+            continue
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        boxes.append({'text': str(r[1]), 'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,
+                      'cy': (y0 + y1) / 2.0, 'h': y1 - y0})
+    if not boxes:
+        return None
+    # 2) 按行聚类（cy 相近归一行）
+    lines = []
+    for b in sorted(boxes, key=lambda z: z['cy']):
+        for line in lines:
+            if abs(b['cy'] - line['cy']) < max(line['h'], b['h']) * 0.6:
+                line['items'].append(b)
+                line['y0'] = min(line['y0'], b['y0'])
+                line['y1'] = max(line['y1'], b['y1'])
+                line['h'] = line['y1'] - line['y0']
+                line['cy'] = (line['y0'] + line['y1']) / 2.0
+                break
+        else:
+            lines.append({'cy': b['cy'], 'y0': b['y0'], 'y1': b['y1'],
+                          'h': b['h'], 'items': [b]})
+    # 3) 每行内找空隙并补识
+    changed = False
+    out_lines = []
+    for line in lines:
+        items = sorted(line['items'], key=lambda z: z['x0'])
+        line_text = ''.join(it['text'] for it in items)
+        pieces = []
+        for i, it in enumerate(items):
+            pieces.append(it['text'])
+            if i + 1 >= len(items):
+                continue
+            nx0 = items[i + 1]['x0']
+            # 触发条件（2026-11-18 收紧）：只对「行命中填空模板」补识。
+            # 几何空隙/墨迹都不可靠——正常页的表格线、横线、栏间距都会误触发，
+            # 把整册 OCR 拖到 8 页/分。填空页的行文本必含下划线+年月日等模板词。
+            if not _GAP_TEMPLATE.search(line_text):
+                continue
+            pad = line['h'] * 0.2
+            y0c = int(max(0, line['y0'] - line['h'] * 1.2))
+            y1c = int(min(h_img, line['y1'] + line['h'] * 1.2))
+            x0c = int(max(0, it['x1'] - pad))
+            # 往右多扩 2 行高 + 放大 3×：手写数字常紧挨右邻框，且字号小，
+            # 裁到边缘或放大不足都会被检测器漏掉（实测 3× 才能读出「9」）
+            x1c = int(min(w_img, nx0 + line['h'] * 2.0))
+            if x1c <= x0c or y1c <= y0c:
+                continue
+            crop = img[y0c:y1c, x0c:x1c]
+            scale = 3.0
+            crop = cv2.resize(crop, None, fx=scale, fy=scale,
+                              interpolation=cv2.INTER_CUBIC)
+            with _ENG_LOCK:
+                _ENG_USE['active'] += 1
+            try:
+                sub_res, _ = engine()(crop)
+            except Exception:
+                sub_res = None
+            finally:
+                with _ENG_LOCK:
+                    _ENG_USE['active'] -= 1
+            if not sub_res:
+                continue
+            # 只保留落在空隙内的字（x1 < nx0），右邻框的字（如「日签订。」）不重复插入
+            gap_chars = []
+            for r in sub_res:
+                if len(r) < 3:
+                    continue
+                try:
+                    _xs = [float(p[0]) for p in r[0]]
+                except Exception:
+                    continue
+                _ox1 = x0c + max(_xs) / scale
+                if _ox1 < nx0:
+                    gap_chars.append((x0c + min(_xs) / scale, str(r[1])))
+            gap_chars.sort(key=lambda z: z[0])
+            gap_text = ''.join(t for _, t in gap_chars)
+            if gap_text:
+                pieces.append(gap_text)
+                changed = True
+        out_lines.append(''.join(pieces))
+    if not changed:
+        return None
+    return '\n'.join(out_lines)
+
+
 def ocr_image(path, max_side=_MAX_SIDE, use_cache=True, foreground=True):
     """
     返回识别出的文字（多行）。默认优先读缓存。
@@ -539,6 +649,20 @@ def ocr_image(path, max_side=_MAX_SIDE, use_cache=True, foreground=True):
     txt = ''
     if res:
         txt = '\n'.join(str(r[1]) for r in res if len(r) > 1)
+        # P0-1：行内空隙补识（手写填空被检测器切成两段时，中间补识别）
+        try:
+            _filled = _gap_fill(img, res, h, w)
+            if _filled:
+                txt = _filled
+        except Exception:
+            traceback.print_exc()
+        # P0-2：填空槽位行（含下划线 + 年月日/金额等）加标记，提示复核回原图
+        _marked = []
+        for _ln in txt.split('\n'):
+            if '_' in _ln and re.search(r'年|月|日|元|万|签订|金额|日期', _ln):
+                _ln = _ln.rstrip() + '【疑手写·需回原图】'
+            _marked.append(_ln)
+        txt = '\n'.join(_marked)
     if use_cache and txt:
         # K1：只有识别到非空文字才写缓存；空结果不固化，下次会重新识别
         _write_cache(path, max_side, txt, time.time() - t0)

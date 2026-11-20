@@ -2402,15 +2402,24 @@ function loadQueue() {
       var tdStatus = el('td', { style: 'padding:6px;white-space:nowrap' });
       tdStatus.appendChild(stWrap);
       if (st === '处理中') {
-        var runMin = 0;
+        // 总耗时从「提交时间」算（含 OCR 预热），判分耗时从「开始时间」（认领）算
+        var totalMin = 0, judgeMin = 0, warmMin = 0;
         try {
-          var r0 = new Date(String(t['开始时间'] || t['提交时间'] || '')
-                    .replace(' ', 'T')).getTime();
-          if (!isNaN(r0)) runMin = Math.floor((Date.now() - r0) / 60000);
+          var rt = new Date(String(t['提交时间'] || '').replace(' ', 'T')).getTime();
+          if (!isNaN(rt)) totalMin = Math.floor((Date.now() - rt) / 60000);
+          var rs = new Date(String(t['开始时间'] || '').replace(' ', 'T')).getTime();
+          if (!isNaN(rs)) {
+            judgeMin = Math.floor((Date.now() - rs) / 60000);
+            warmMin = Math.max(0, Math.floor((rs - rt) / 60000));
+          }
         } catch (e) {}
+        var seg = totalMin > 0 ? ('复核进行中，共耗时 ' + totalMin + ' 分钟') : '复核进行中，刚刚开始';
+        if (warmMin > 0 || judgeMin > 0) {
+          seg += '（OCR 预热 ' + warmMin + ' 分钟 + 判分 ' + judgeMin + ' 分钟）';
+        }
         tdStatus.appendChild(el('span', {
           style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-info);font-weight:700',
-          text: 'agent 处理中' + (runMin > 0 ? ('，已开始 ' + runMin + ' 分钟') : '，刚刚开始') }));
+          text: seg }));
         if (t['更新时间']) {
           tdStatus.appendChild(el('span', {
             style: 'display:block;font-size:11px;color:var(--c-mute)',
@@ -2432,8 +2441,8 @@ function loadQueue() {
             text: '可能唤醒失败，请在对话中发一句话唤醒' }));
         } else {
           tdStatus.appendChild(el('span', {
-            style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-mute)',
-            text: mins > 0 ? ('已等待 ' + mins + ' 分钟') : '刚刚提交' }));
+            style: 'display:block;margin-top:3px;font-size:11px;color:var(--c-est);font-weight:600',
+            text: mins > 0 ? ('OCR 预热中，已等待 ' + mins + ' 分钟') : 'OCR 预热中，刚刚提交' }));
         }
       }
       var tdOps = el('td', { style: 'padding:6px' });
@@ -2650,11 +2659,23 @@ document.getElementById('btnStartOcr').onclick = async function () {
         pollTicks++;
         if (pollTicks > 60) {
           // G14 兜底：3 分钟还没拿到进度（可能服务刚重启，_PREWARM_STATE 已清零），
-          // 停止轮询，避免 total 恒 0 的空转。
+          // 停止轮询，避免 total 恒 0 的空转；带上服务端任务快照便于定位。
           clearInterval(window._ocrPollTimer);
           window._ocrPollTimer = null;
-          m.style.color = 'var(--c-mute2)';
-          m.textContent = '未获取到进度（可能服务刚重启）。可在单位表看 OCR 状态。';
+          fetch('/api/prewarm').then(function (r3) { return r3.json(); })
+            .then(function (st3) {
+              var ks = Object.keys(st3 || {}).map(function (k) {
+                var t = st3[k] || {};
+                return (t['投标单位'] || '?') + '（' + (t['状态'] || '?') + ' '
+                  + (t['总数'] || t['页数'] || 0) + '页）';
+              });
+              m.style.color = 'var(--c-mute2)';
+              m.textContent = '未获取到本单位进度。服务端任务：'
+                + (ks.join('；') || '无') + '。可在单位表看 OCR 状态。';
+            }).catch(function () {
+              m.style.color = 'var(--c-mute2)';
+              m.textContent = '未获取到进度（可能服务刚重启）。可在单位表看 OCR 状态。';
+            });
           loadUnits();
           return;
         }
@@ -2681,8 +2702,7 @@ document.getElementById('btnStartOcr').onclick = async function () {
             loadUnits();          // 刷新单位表 OCR 状态
           }
         }).catch(function () {
-          clearInterval(window._ocrPollTimer);
-          window._ocrPollTimer = null;
+          // fetch 失败（网络抖动/服务端忙）不静默停，继续轮询；由 pollTicks 兜底
         });
       }, 3000);
     }).catch(function (e) {
