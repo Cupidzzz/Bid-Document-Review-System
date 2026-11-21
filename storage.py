@@ -15,6 +15,7 @@ WORK = os.path.join(HERE, 'work')
 RESCUE_LOG = os.path.join(WORK, 'rescue_log.json')
 FRONT_LOG = os.path.join(WORK, 'front_log.json')   # 前端上报的运行/错误日志（最多 300 条）
 ISSUE_LOG = os.path.join(WORK, '复核问题反馈.json')   # agent 复核中发现的问题反馈（最多 500 条）
+OCR_STATS = os.path.join(WORK, 'ocr_stats.json')   # 最近一次预热的吞吐落盘
 
 
 def now():
