@@ -4,6 +4,54 @@
 > 新记录写在最前（时间倒序）。
 > 相关文档：`复核方法.md`（方法层）、`通用口径.md`（跨项目判断）、各项目的 `项目要点.md`。
 
+## S13 口径版本闸门 · 2026-11-18
+
+**触发**（用户）：补上 S13（口径文件改了系统不知道）的全部 5 条待做。
+
+**改动**：
+
+| # | 内容 |
+|---|---|
+| 1 | `rules_fingerprint`：算 通用口径/评分标准/项目要点 的 sha1 短码 + mtime |
+| 2 | `finalize` 写 `口径版本` 指纹；规则文件 mtime 晚于结果复核时间 → `口径变更警告`（软闸门，不阻断） |
+| 3 | 重置唤醒消息带「当前规则版本：…，重做前请调 rules_snapshot 重读」 |
+| 4 | 新增 `rules_snapshot` 命令：一次取全 通用口径+评分标准+项目要点 全文与 hash |
+| 5 | 归档校验「结果口径版本 == 当前口径」，不一致列「口径需复查」进归档清单 |
+
+**文件**：`server.py`、`tests\_verify_s13.py`
+
+## S1b 依据数字检查 · 2026-11-18
+
+**触发**（用户）：补上 S1b（得分与依据结论数字不一致）的只读检查。
+
+**改动**：新增 `_basis_conclusion_score`（从依据提取结论数字，排除"若/如/否则/则"假设句）；
+`_autoscore_check` 增加第 ③ 层「依据数字可疑」——对所有评分项比对"依据结论数字 vs 得分"，
+不一致列候选、**不阻断**，供人工判断。
+
+**文件**：`server.py`、`tests\_verify_s1b.py`
+
+## P2-1 拆 server.py（五步）· 2026-11-18
+
+**触发**（用户）：按审计 P2-1，把 7000+ 行单文件拆成模块，降低改代码风险。
+
+**改动**（增量式，每步 commit + 回归）：
+
+| 步 | 拆出模块 | 内容 | 减行数 |
+|---|---|---|---|
+| 一 | `validation.py` | as_text / check_pending_reason / total_consistency_errors / check_result_shape | ~110 |
+| 二 | `storage.py` | atomic_write_json / backup_once | ~35 |
+| 三 | `storage.py` 扩充 | rescue_log_add / front_log_add / issue_add / issue_list + WORK 等路径常量 | ~70 |
+| 四 | `prewarm.py` | HEAVY_LOCK / pick_key_pages / _prewarm_worker / prewarm_summary / wait_prewarm / start_prewarm / _prune_prewarm_state + OCR_STATS | ~219 |
+| 五 | `summary.py` | pair_group / weighted_detail / auto_pending_reason | ~172 |
+
+**结果**：server.py 7149 → 约 6500 行；依赖方向 `server → {validation, storage, prewarm, summary}`，`summary → validation`，无循环导入。
+
+**验证**：编译 ✅ + `_verify_imports`（14 模块）✅ + 全量回归 54 通过 / 无拆分引入的 bug（33 个 Traceback 均为服务端没开 / 数据依赖 / 测试脚本 sys.path 历史问题）。
+
+**待办**：`_archive` 大方法（约 400 行）与 H 类其余 handler 尚未拆，需"先重构再拆"，留作单独一轮。
+
+**文件**：新增 `validation.py`、`storage.py`、`prewarm.py`、`summary.py`；`server.py`、`sync_code.py`；测试 `_verify_validation.py`、`_verify_auto_session.py`（修 sys.path）
+
 ## P2 第一批 · 2026-11-18　LICENSE + 版本同步 + README 补全 + 关键 JSON 原子写
 
 **触发**（用户）：按审计 P2，先做"交付门面 + 数据安全"。

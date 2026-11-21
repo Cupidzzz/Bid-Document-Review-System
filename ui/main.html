@@ -1158,10 +1158,9 @@ function loadBids() {
     }
     list.forEach(function (x) {
       var mb = x['大小'] ? (x['大小'] / 1048576).toFixed(1) + ' MB' : '';
-      var done = x['已抽取'] ? '' : '　（尚未抽取，点「开始复核」时自动处理）';
       box.appendChild(el('div', { class: 'hint ok', text:
         (x['投标单位'] || '') + '　' + (x['文件'] || '') +
-        '　' + (x['格式'] || '') + (mb ? '　' + mb : '') + done }));
+        '　' + (x['格式'] || '') + (mb ? '　' + mb : '') }));
     });
   }).catch(function () {});
 }
@@ -1777,11 +1776,8 @@ document.getElementById('btnUp').onclick = function () {
         return;
       }
       var x = r['结果'] || {};
-      var mb = x['大小'] ? (x['大小'] / 1048576).toFixed(1) + ' MB' : '';
       m.style.color = 'var(--c-act)';
-      m.textContent = '保存成功：' + (x['投标单位'] || bd) + '　' +
-        (x['文件'] || f.name) + '（' + (x['格式'] || '') +
-        (mb ? '，' + mb : '') + '）';
+      m.textContent = '保存成功：' + (x['文件'] || f.name);
       loadBids();
       loadUnits();
       loadOcrUnits();
@@ -2501,10 +2497,11 @@ function loadQueue() {
       var tdStatus = el('td', { style: 'padding:6px;white-space:nowrap' });
       tdStatus.appendChild(stWrap);
       if (st === '处理中') {
-        // 总耗时从「提交时间」算（含 OCR 预热），判分耗时从「开始时间」（认领）算
+        // 总耗时从「重置时间/提交时间」算（含 OCR 预热）；判分耗时从「开始时间」（认领）算。
+        // 重置并重审会刷新「重置时间」，此时用旧「提交时间」会算出几万分钟的假等待。
         var totalMin = 0, judgeMin = 0, warmMin = 0;
         try {
-          var rt = new Date(String(t['提交时间'] || '').replace(' ', 'T')).getTime();
+          var rt = new Date(String(t['重置时间'] || t['提交时间'] || '').replace(' ', 'T')).getTime();
           if (!isNaN(rt)) totalMin = Math.floor((Date.now() - rt) / 60000);
           var rs = new Date(String(t['开始时间'] || '').replace(' ', 'T')).getTime();
           if (!isNaN(rs)) {
@@ -2528,7 +2525,8 @@ function loadQueue() {
       if (st === '待处理') {
         var mins = 0;
         try {
-          var t0 = new Date(String(t['提交时间'] || '').replace(' ', 'T')).getTime();
+          // 重置并重审后以「重置时间」为基准，否则用「提交时间」
+          var t0 = new Date(String(t['重置时间'] || t['提交时间'] || '').replace(' ', 'T')).getTime();
           if (!isNaN(t0)) mins = Math.floor((Date.now() - t0) / 60000);
         } catch (e) {}
         if (mins >= 10) {

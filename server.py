@@ -20,7 +20,7 @@ from validation import (as_text, check_pending_reason,
                         check_result_shape, total_consistency_errors)
 from storage import (atomic_write_json, backup_once, front_log_add,
                      issue_add, issue_list, rescue_log_add,
-                     FRONT_LOG, ISSUE_LOG, RESCUE_LOG, WORK, OCR_STATS)
+                     FRONT_LOG, ISSUE_LOG, RESCUE_LOG, WORK, OCR_STATS, TMP_DIR)
 from prewarm import (HEAVY_LOCK, pick_key_pages, start_prewarm,
                      prewarm_summary, wait_prewarm, _prune_prewarm_state,
                      _PREWARM_STATE)
@@ -954,6 +954,64 @@ def _gcd_list(nums):
     return g or 1
 
 
+def _basis_conclusion_score(basis):
+    """S1b：从依据文字里提取"结论得分"数字（排除假设句），提取不到返回 None。
+
+    只认结论句（含"得/计/合计/共计/认定/为/→/＝/="后跟数字，可带"分"），
+    排除"若/如/否则/则"引导的假设句；取最后一个结论数字。
+    没有纯结论句时返回 None（不把假设句的数字当结论，宁可漏报不误报）。
+    """
+    if not basis:
+        return None
+    sentences = re.split(r'[。；;\n]', basis)
+    concl = [s for s in sentences
+             if re.search(r'(?:得|计|合计|共计|认定|为|→|＝|=)\s*\d+(?:\.\d+)?', s)
+             and not re.search(r'若|如|否则|则', s)]
+    if not concl:
+        return None
+    last = None
+    for s in concl:
+        for m in re.finditer(r'(?:得|计|合计|共计|认定|为|→|＝|=)\s*(\d+(?:\.\d+)?)', s):
+            try:
+                last = float(m.group(1))
+            except Exception:
+                pass
+    return last
+
+
+def rules_fingerprint(pname):
+    """S13：算项目规则文件的版本指纹（sha1 短码 + mtime），返回 dict。
+
+    覆盖：通用口径.md（全局）、评分标准.json、项目要点.md（项目目录）。
+    用于结单时写进结果、归档时比对"结果口径 == 当前口径"。
+    """
+    fp = {}
+    gk = os.path.join(HERE, '通用口径.md')
+    if os.path.isfile(gk):
+        try:
+            with open(gk, 'rb') as f:
+                h = hashlib.sha1(f.read()).hexdigest()[:10]
+            fp['通用口径'] = {'sha1': h,
+                              'mtime': datetime.datetime.fromtimestamp(
+                                  os.path.getmtime(gk)).strftime('%Y-%m-%d %H:%M:%S')}
+        except Exception:
+            pass
+    pd = project_dir_for(pname)
+    if pd:
+        for name, key in (('评分标准.json', '评分标准'), ('项目要点.md', '项目要点')):
+            f = os.path.join(pd, name)
+            if os.path.isfile(f):
+                try:
+                    with open(f, 'rb') as fh:
+                        h = hashlib.sha1(fh.read()).hexdigest()[:10]
+                    fp[key] = {'sha1': h,
+                               'mtime': datetime.datetime.fromtimestamp(
+                                   os.path.getmtime(f)).strftime('%Y-%m-%d %H:%M:%S')}
+                except Exception:
+                    pass
+    return fp
+
+
 def project_archived(pname):
     """项目是否已归档（读 项目信息.json 的状态）。取不到就当未归档。"""
     pd = project_dir_for(pname)
@@ -1718,18 +1776,36 @@ class H(http.server.BaseHTTPRequestHandler):
                         done_ocr = 0
                         for _fp in files:
                             pdir = _fp + '.pages'
-                            if os.path.isdir(pdir):
-                                for fn in os.listdir(pdir):
-                                    if fn.lower().endswith(('.jpg', '.jpeg',
+                            if not os.path.isdir(pdir):
+                                continue
+                            # 该文件的正文行：判断每页是否已有文字层（>40 字不需要 OCR）
+                            _txt_lines = []
+                            _txt_path = _fp + '.txt'
+                            if os.path.isfile(_txt_path):
+                                try:
+                                    with open(_txt_path, encoding='utf-8',
+                                              errors='ignore') as _tf:
+                                        _txt_lines = _tf.read().split('\n')
+                                except Exception:
+                                    _txt_lines = []
+                            for fn in os.listdir(pdir):
+                                if not fn.lower().endswith(('.jpg', '.jpeg',
                                                             '.png', '.bmp',
                                                             '.webp', '.tif',
                                                             '.tiff')):
-                                        n_img += 1
-                                        need_ocr += 1
-                                cache = os.path.join(pdir, '.ocr_cache')
-                                if os.path.isdir(cache):
-                                    done_ocr += len([x for x in os.listdir(cache)
-                                                     if x.endswith('.json')])
+                                    continue
+                                n_img += 1
+                                # 页号从文件名 pNNNN_iN.jpg 解析；有文字层的页不 OCR
+                                _m = re.match(r'[pP](\d+)', fn)
+                                _pg = int(_m.group(1)) if _m else 0
+                                if _pg and 1 <= _pg <= len(_txt_lines) \
+                                        and len((_txt_lines[_pg - 1] or '').strip()) > 40:
+                                    continue
+                                need_ocr += 1
+                            cache = os.path.join(pdir, '.ocr_cache')
+                            if os.path.isdir(cache):
+                                done_ocr += len([x for x in os.listdir(cache)
+                                                 if x.endswith('.json')])
                         rec['图片数'] = n_img
                         rec['需OCR页'] = need_ocr
                         rec['已OCR页'] = done_ocr
@@ -2224,9 +2300,9 @@ class H(http.server.BaseHTTPRequestHandler):
         else:
             kind = 'text'
 
-        os.makedirs(WORK, exist_ok=True)
-        # M4：临时名带 pid + 线程 id，两个浏览器同时上传不互相截断
-        tmp = os.path.join(WORK, '_tmp_tender_upload.%d.%d'
+        os.makedirs(TMP_DIR, exist_ok=True)
+        # M4：临时名带 pid + 线程 id，两个浏览器同时上传不互相截断；临时文件统一放 work\tmp
+        tmp = os.path.join(TMP_DIR, '_tmp_tender_upload.%d.%d'
                            % (os.getpid(), threading.get_ident()))
         with open(tmp, 'wb') as f:
             f.write(raw)
@@ -2717,14 +2793,25 @@ class H(http.server.BaseHTTPRequestHandler):
         if params.get('唤醒', True):
             try:
                 import wake as wake_mod
+                _fp_txt = ''
+                try:
+                    _fp = rules_fingerprint(t.get('项目') or '')
+                    if _fp:
+                        _fp_txt = '；'.join('%s %s' % (k, v.get('mtime') or '')
+                                            for k, v in _fp.items())
+                except Exception:
+                    pass
                 woke, winfo = wake_mod.wake(
                     '【自动唤醒·重置后继续】项目「%s」的任务 %s（%s）已由用户重置为待处理。'
                     '【第一步必做】调接口 POST /api/run '
                     '{"任务":"stopcheck","参数":{"id":"%s"}}，返回 "已停止": true 就停手。'
+                    '【口径】当前规则版本：%s。重做前请调 rules_snapshot 重读规则原文，'
+                    '不要沿用上次判分的旧口径。'
                     '请从上次中断处继续复核（已 OCR 的页有缓存），完成后写入 '
                     '项目\\%s\\复核报告\\。'
                     % (t.get('项目') or '', tid, t.get('投标人') or '', tid,
-                       t.get('项目') or ''), project=t.get('项目') or '')
+                       (_fp_txt or '取不到'), t.get('项目') or ''),
+                    project=t.get('项目') or '')
             except Exception as e:
                 traceback.print_exc()
                 winfo = '唤醒调用异常：%r' % e
@@ -4725,6 +4812,25 @@ class H(http.server.BaseHTTPRequestHandler):
             md.append('- 归档备注：%s' % note)
         _ar_rules, _ar_path = load_project_rules(pname)
         _ar_won = bool(_ar_rules and _ar_rules.get('权重折算'))
+        # S13-5：归档校验口径——结果口径版本 != 当前口径 → 列需复查
+        _cur_fp = rules_fingerprint(pname)
+        _recheck = []
+        for _u in facts['单位']:
+            _rf = os.path.join(pd, '复核报告', _u['投标单位'] + '_复核结果.json')
+            if not os.path.isfile(_rf):
+                continue
+            try:
+                with open(_rf, encoding='utf-8') as f:
+                    _rd = json.load(f)
+            except Exception:
+                continue
+            _old = _rd.get('口径版本') or {}
+            _diff = [k for k in _cur_fp
+                     if ((_old.get(k) or {}).get('sha1')
+                         != (_cur_fp[k] or {}).get('sha1'))]
+            if _diff:
+                _recheck.append({'投标单位': _u['投标单位'],
+                                 '口径差异': '、'.join(_diff)})
         md += ['', '## 各家得分', '', '| 投标单位 | 得分 | 满分 |', '|---|---|---|']
         for s in data['得分']:
             md.append('| %s | %s | %s |' % (s['投标单位'], s['得分'], s['满分']))
@@ -4739,11 +4845,24 @@ class H(http.server.BaseHTTPRequestHandler):
             md += ['', '## 未决项（已确认带未决归档）', '']
             for k, v in data['未决项'].items():
                 md.append('- %s：项 %s' % (k, '、'.join(str(x) for x in v)))
+        if _recheck:
+            md += ['', '## 口径需复查（结果按旧口径判的）', '',
+                   '| 投标单位 | 口径差异 |', '|---|---|']
+            for r in _recheck:
+                md.append('| %s | %s |' % (r['投标单位'], r['口径差异']))
         md += ['', '## 交付文件', '', '| 文件 | 字节 |', '|---|---|']
         for f2 in files:
             md.append('| %s | %s |' % (f2['文件'], f2['字节']))
         with open(os.path.join(pd, '归档清单.md'), 'w', encoding='utf-8') as f:
             f.write('\n'.join(md) + '\n')
+        # S13-5：把口径需复查写进归档清单.json
+        if _recheck:
+            archive['口径需复查'] = _recheck
+            try:
+                with open(ap, 'w', encoding='utf-8') as f:
+                    json.dump(archive, f, ensure_ascii=False, indent=1)
+            except Exception:
+                traceback.print_exc()
 
         # 项目结项 = 会话轮换的硬边界：把该项目专属会话标记失效，
         # 下次该项目再复核会回落到默认会话（界面上会提示"项目已结项"）。
@@ -5080,7 +5199,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if not files:
             return self._err(404, '没有复核结果文件')
 
-        checked, same, diff, cannot, arith = 0, 0, [], [], []
+        checked, same, diff, cannot, arith, basis_diff = 0, 0, [], [], [], []
         for fn in files:
             try:
                 with open(os.path.join(rd, fn), encoding='utf-8') as f:
@@ -5097,6 +5216,18 @@ class H(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     lines = []
             for it in (d.get('评分') or []):
+                # (0) S1b：依据结论数字 vs 得分（对所有项，只读候选，不阻断）
+                try:
+                    _got = float(it.get('得分') or 0)
+                except Exception:
+                    _got = 0.0
+                _concl = _basis_conclusion_score(as_text(it.get('依据')))
+                if _concl is not None and abs(_concl - _got) > 0.01:
+                    basis_diff.append({
+                        '投标人': unit, '序号': it.get('序号'),
+                        '名称': (it.get('名称') or '')[:18],
+                        '得分': round(_got, 2), '依据结论': round(_concl, 2),
+                        '依据片段': (as_text(it.get('依据')) or '')[:60]})
                 nm = (it.get('名称') or '').strip()
                 hit = rule_map.get(nm)
                 if not hit:
@@ -5163,11 +5294,14 @@ class H(http.server.BaseHTTPRequestHandler):
             '检查项数': checked, '一致': same,
             '差异数': len(diff), '差异': diff[:50],
             '算术可疑数': len(arith), '算术可疑': arith[:50],
+            '依据数字可疑数': len(basis_diff), '依据数字可疑': basis_diff[:50],
             '无法复算数': len(cannot), '无法复算': cannot[:30],
-            '说明': ('分两层：①「算术自检」不需要正文——得分是否超过分值、'
+            '说明': ('分三层：①「算术自检」不需要正文——得分是否超过分值、'
                      '是否单项分的整数倍、分级项能否由档位相加得到；'
                      '②「正文复算」只在正文能找到"金额+日期"数据行时才有结论，'
-                     '算不出来就记为「无法复算」，属正常。'
+                     '算不出来就记为「无法复算」，属正常；'
+                     '③「依据数字可疑」（S1b）＝依据文字里的结论数字与得分字段'
+                     '不一致，已排除假设句，仅作候选、不阻断，需人工判断。'
                      '「差异」里看「方向」：规则多＝复核可能漏算，要重点看；'
                      '规则少＝多为业绩表是扫描件、规则只数到文字层，属常见。'),
         })
@@ -5569,6 +5703,43 @@ class H(http.server.BaseHTTPRequestHandler):
                     '「证据存疑」= 依据里的长数字串在该页文本找不到，'
                     '可能是编造证据或 OCR 漏识别，须回原图核对后再结单。'})
 
+    def _rules_snapshot(self, params):
+        """S13-4：一次取全规则——通用口径 + 评分标准 + 项目要点 的全文与 hash。
+
+        让 agent 一次取全，避免"只读了分值字段、没读规则原文"。
+        """
+        pname = (params.get('项目') or '').strip()
+        if not pname:
+            return self._err(400, '缺少「项目」参数')
+        gk = ''
+        if os.path.isfile(os.path.join(HERE, '通用口径.md')):
+            try:
+                with open(os.path.join(HERE, '通用口径.md'), encoding='utf-8') as f:
+                    gk = f.read()
+            except Exception:
+                pass
+        rules_txt, points_txt = '', ''
+        pd = project_dir_for(pname)
+        if pd:
+            for name, key in (('评分标准.json', '评分标准'),
+                              ('项目要点.md', '项目要点')):
+                f = os.path.join(pd, name)
+                if os.path.isfile(f):
+                    try:
+                        with open(f, encoding='utf-8') as fh:
+                            if key == '评分标准':
+                                rules_txt = fh.read()
+                            else:
+                                points_txt = fh.read()
+                    except Exception:
+                        pass
+        return self._send(200, {
+            'ok': True, '任务': 'rules_snapshot', '项目': pname,
+            '通用口径': gk, '评分标准': rules_txt, '项目要点': points_txt,
+            '口径版本': rules_fingerprint(pname),
+            '说明': '「口径版本」= 各规则文件的 sha1 短码 + mtime，'
+                    '结单时请确保按当前这版规则判分。'})
+
     def _claim(self, params):
         """把某单位的「待处理」任务标记为「处理中」，并记录开始时间。
 
@@ -5803,6 +5974,26 @@ class H(http.server.BaseHTTPRequestHandler):
                     json.dump(d, _wf, ensure_ascii=False, indent=1)
             except Exception:
                 traceback.print_exc()
+
+        # S13：写口径指纹 + 结单软闸门（规则文件在判分后改过 → 警告，不阻断）
+        _fp = rules_fingerprint(pname)
+        if _fp:
+            d['口径版本'] = _fp
+        _warn_fp = []
+        _rev_time = d.get('复核时间') or ''
+        for _k, _v in _fp.items():
+            if _rev_time and _v.get('mtime') and _v['mtime'] > _rev_time:
+                _warn_fp.append('%s（%s）' % (_k, _v['mtime']))
+        if _warn_fp:
+            d['口径变更警告'] = ('判分后口径文件有变更：%s；请确认是否需重判'
+                                 % '、'.join(_warn_fp))
+        else:
+            d.pop('口径变更警告', None)
+        try:
+            with open(os.path.join(rd, target), 'w', encoding='utf-8') as _wf:
+                json.dump(d, _wf, ensure_ascii=False, indent=1)
+        except Exception:
+            traceback.print_exc()
 
         # P1-1：证据强校验——出处页码真实 + 依据长数字串可查（防注入诱导编造证据）
         _evd = verify_result_evidence(d, pname, real_unit)
@@ -6242,6 +6433,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if task == 'verify_evidence':
             return self._verify_evidence(params)
+
+        if task == 'rules_snapshot':
+            return self._rules_snapshot(params)
 
         if task == 'claim':
             return self._claim(params)
