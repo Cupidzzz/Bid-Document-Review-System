@@ -5,6 +5,7 @@
 ## 技术栈
 
 - 后端：Python 3.9（标准库 HTTP 服务）
+- 平台：**仅 Windows**（启动脚本为 `.cmd`）
 - 前端：原生 HTML + CSS + JavaScript（单文件，无框架）
 - OCR：PP-OCRv4 模型 + OpenVINO 推理引擎
 - 判分：独立 AI 智能体（逐项判分、每分留依据与出处）
@@ -65,3 +66,32 @@ start_server.cmd
 
 然后浏览器打开 http://127.0.0.1:8767/ —— 首次打开会弹「访问口令」框，口令在
 服务启动窗口的「口令」行（或 `workpi_token.txt`）；每重启一次口令会重新生成。
+
+## 安装（搬到新机器）
+
+1. 安装 Python 3.9；
+2. 把 `vendor/`、`vendor_ov/` 两个目录**整个复制**过去（已打包好，含 OCR 引擎与模型）；
+   若要重新下载依赖，运行 `python download_ocr.py <输出目录>`（下载会校验 SHA256）；
+3. 依赖版本见 `requirements.txt`（锁定版本，保证可复现）；
+4. 运行 `start_server.cmd`，浏览器打开 http://127.0.0.1:8767/ 输访问口令即可。
+
+## 目录结构
+
+```
+server.py           服务端主程序（路由 / 队列 / 预处理 / OCR / 汇总）
+ui/main.html        前端单页
+ocr_text.py         OCR（PP-OCRv4 + onnxruntime / openvino 双后端）
+download_ocr.py     依赖下载（带 SHA256 校验）
+wake.py             唤醒 agent 会话
+vendor/             打包的第三方依赖（onnxruntime 引擎等）
+vendor_ov/          打包的 OpenVINO 引擎（可选，不装则回退 onnxruntime）
+requirements.txt    锁定依赖版本
+start_server.cmd    启动（Windows）
+stop_server.cmd     停止
+```
+
+## 已知限制
+
+- **仅 Windows**：启动脚本是 `.cmd`，未做跨平台适配；
+- **判分依赖外部 agent**：本仓库不含判分执行器，需配置 DSH 会话（见「架构」）；
+- **单机自用**：访问口令鉴权 + 唤醒链路都按「单机」设计，多用户 / 公网环境需另行加固。

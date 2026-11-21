@@ -2623,9 +2623,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if pd:
                 pf = os.path.join(pd, '评分标准.json')
                 try:
-                    backup_once(pf)
-                    with open(pf, 'w', encoding='utf-8') as f:
-                        json.dump(saved, f, ensure_ascii=False, indent=1)
+                    atomic_write_json(pf, saved, backup=True)
                 except Exception:
                     traceback.print_exc()
         return self._send(200, {'ok': True, '保存时间': saved['更新时间'],
@@ -3107,9 +3105,7 @@ class H(http.server.BaseHTTPRequestHandler):
                         '提交时间': now(), '状态': '待处理',
                         '预处理': steps, '说明': req.get('说明') or '',
                         '结果文件': None, '错误': None}
-                with open(os.path.join(QUEUE, tid + '.json'), 'w',
-                          encoding='utf-8') as fh:
-                    json.dump(task, fh, ensure_ascii=False, indent=1)
+                atomic_write_json(os.path.join(QUEUE, tid + '.json'), task)
                 pre_n = 0
                 for _v, _bp, _t, _pd in _vols:
                     try:
@@ -3632,8 +3628,7 @@ class H(http.server.BaseHTTPRequestHandler):
                         changed = True
             if fix and changed:
                 try:
-                    with open(fp, 'w', encoding='utf-8') as f:
-                        json.dump(d, f, ensure_ascii=False, indent=1)
+                    atomic_write_json(fp, d)
                 except Exception:
                     traceback.print_exc()
         return self._send(200, {
@@ -5540,8 +5535,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                     '待核原因': reason[:200]})
             if filled and want_write:
                 try:
-                    with open(fp, 'w', encoding='utf-8') as f:
-                        json.dump(d, f, ensure_ascii=False, indent=1)
+                    atomic_write_json(fp, d)
                 except Exception as e:
                     out.append({'文件': fn, '错误': '写入失败：%r' % e})
                     continue
