@@ -989,6 +989,7 @@ RESCUE_TICK = int(os.environ.get('RESCUE_TICK') or 120)
 RESCUE_LOG = os.path.join(WORK, 'rescue_log.json')
 FRONT_LOG = os.path.join(WORK, 'front_log.json')   # 前端上报的运行/错误日志（最多 300 条）
 ISSUE_LOG = os.path.join(WORK, '复核问题反馈.json')   # agent 复核中发现的问题反馈（最多 500 条）
+API_TOKEN = ''   # 访问口令：main() 启动时生成随机值；前端调 /api/* 需带 X-API-Token
 _TASK_LOCK = threading.Lock()
 
 
@@ -1968,11 +1969,28 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        # P1-3：限制外联，降低 XSS 后果（本前端是内联脚本，需允许 unsafe-inline）
+        self.send_header('Content-Security-Policy',
+                         "default-src 'self' 'unsafe-inline'; "
+                         "img-src 'self' data: blob:; connect-src 'self'")
         self.end_headers()
         self.wfile.write(body)
 
     def _err(self, code, msg):
         return self._send(code, {'ok': False, 'error': msg})
+
+    def _check_token(self):
+        """校验访问口令：/api/* 需要，首页等静态资源免。未配置口令则不校验。"""
+        if not API_TOKEN:
+            return True
+        p = urllib.parse.urlparse(self.path).path
+        if not p.startswith('/api/'):
+            return True
+        tk = self.headers.get('X-API-Token') or ''
+        if not tk:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            tk = (qs.get('token') or [''])[0]
+        return tk == API_TOKEN
 
     def _body(self):
         n = int(self.headers.get('Content-Length') or 0)
@@ -1996,6 +2014,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 pass
 
     def _do_GET(self):
+        if not self._check_token():
+            return self._err(401, '访问口令缺失或不正确（见服务启动窗口的「口令」）')
         p = urllib.parse.urlparse(self.path).path
         if p in ('/', '/index.html'):
             fp = os.path.join(HERE, 'ui', 'main.html')
@@ -2468,6 +2488,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 pass
 
     def _do_POST(self):
+        if not self._check_token():
+            return self._err(401, '访问口令缺失或不正确（见服务启动窗口的「口令」）')
         p = urllib.parse.urlparse(self.path).path
         if p == '/api/tender':
             return self._upload_tender()
@@ -2533,6 +2555,8 @@ class H(http.server.BaseHTTPRequestHandler):
 
     # ---------- DELETE ----------
     def do_DELETE(self):
+        if not self._check_token():
+            return self._err(401, '访问口令缺失或不正确（见服务启动窗口的「口令」）')
         p = urllib.parse.urlparse(self.path).path
         if p == '/api/project':
             return self._delete_project()
@@ -6894,6 +6918,16 @@ def main():
                   % (len(_left), '、'.join(str(x.get('投标单位')) for x in _left)))
     except Exception:
         pass
+    # P0-3：生成访问口令——/api/* 需带 X-API-Token；前端首次访问需输入
+    import secrets as _sec
+    global API_TOKEN
+    API_TOKEN = _sec.token_urlsafe(16)
+    try:
+        os.makedirs(WORK, exist_ok=True)
+        with open(os.path.join(WORK, 'api_token.txt'), 'w', encoding='utf-8') as _f:
+            _f.write(API_TOKEN)
+    except Exception:
+        pass
     print('评分复核服务已启动')
     try:
         import version as _ver
@@ -6910,6 +6944,7 @@ def main():
     except Exception as e:
         print('  唤醒   目标解析失败：%r' % (e,))
     print('  绑定   %s:%d' % (host, port))
+    print('  口令   %s（前端首次访问需输入；见 work\\api_token.txt）' % API_TOKEN)
     print('  本机   http://127.0.0.1:%d/' % port)
     if host in ('0.0.0.0', ''):
         ips = _lan_ips()

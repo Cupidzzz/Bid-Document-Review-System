@@ -299,6 +299,38 @@ color:var(--c-info);font-size:13px;margin-bottom:12px}
 </main>
 
 <script>
+// P0-3：访问口令——所有 /api/* 请求自动带 X-API-Token；401 时清口令并触发重新输入
+(function () {
+  function tokenGet() {
+    try { return localStorage.getItem('api_token') || ''; } catch (e) { return ''; }
+  }
+  function tokenSet(v) {
+    try { if (v) localStorage.setItem('api_token', v); else localStorage.removeItem('api_token'); } catch (e) {}
+  }
+  var _f = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var tk = tokenGet();
+    if (tk && typeof url === 'string' && url.indexOf('/api/') === 0) {
+      opts.headers = opts.headers || {};
+      if (opts.headers instanceof Headers) {
+        opts.headers.set('X-API-Token', tk);
+      } else {
+        opts.headers['X-API-Token'] = tk;
+      }
+    }
+    return _f.call(this, url, opts).then(function (resp) {
+      if (resp.status === 401) {
+        tokenSet('');
+        if (window.__onAuthFail) window.__onAuthFail();
+      }
+      return resp;
+    });
+  };
+  window.__tokenGet = tokenGet;
+  window.__tokenSet = tokenSet;
+})();
+
 var D = { 项目: { 名称: '', 编号: '' }, 分组: [] };
 
 function el(tag, attrs, kids) {
@@ -310,6 +342,13 @@ function el(tag, attrs, kids) {
   }
   (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
   return e;
+}
+
+// HTML 转义：不可信数据（项目名/投标人名/OCR 文本/agent 说明）拼进 innerHTML 前必须过这里
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
 }
 
 // ===== 自定义对话框（替代原生 confirm / alert）=====
@@ -360,6 +399,37 @@ function dlgConfirm(title, html, opts) {
 
 function dlgAlert(title, html) {
   return dlgShow(title, html, [{ key: true, text: '知道了', primary: true, focus: true }]);
+}
+
+// 带输入框的对话框：返回 Promise<string>，确定=输入值，取消/Esc=''
+function dlgPrompt(title, label, defaultVal) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var d = document.createElement('dialog');
+    d.className = 'dlg';
+    var head = el('div', { class: 'dlg-head', text: title });
+    var body = el('div', { class: 'dlg-body' });
+    body.appendChild(el('div', { text: label || '', style: 'margin-bottom:8px' }));
+    var inp = el('input', { style: 'width:100%;padding:6px 9px;border:1px solid var(--c-line2);border-radius:6px' });
+    inp.value = defaultVal || '';
+    body.appendChild(inp);
+    var row = el('div', { class: 'dlg-row' });
+    var cancelBtn = el('button', { text: '取消' });
+    var okBtn = el('button', { class: 'primary', text: '确定' });
+    function finish(v) {
+      if (done) return; done = true;
+      d.close(); d.remove(); resolve(v);
+    }
+    cancelBtn.onclick = function () { finish(''); };
+    okBtn.onclick = function () { finish(inp.value.trim()); };
+    row.appendChild(cancelBtn); row.appendChild(okBtn);
+    d.appendChild(head); d.appendChild(body); d.appendChild(row);
+    d.addEventListener('cancel', function (e) { e.preventDefault(); finish(''); });
+    d.addEventListener('click', function (e) { if (e.target === d) finish(''); });
+    document.body.appendChild(d);
+    d.showModal();
+    inp.focus();
+  });
 }
 
 // 模块折叠：card 的 h2 点击切换折叠/展开
@@ -3543,6 +3613,25 @@ loadSessionHealth();
 loadBids();
 boot();
 initCollapse();
+// P0-3：访问口令检查——没有口令就弹输入框，输完存下并刷新关键数据
+function ensureToken() {
+  var tk = window.__tokenGet ? window.__tokenGet() : '';
+  if (tk) return;
+  dlgPrompt('访问口令', '请输入服务启动窗口显示的「口令」：').then(function (v) {
+    if (!v) return;
+    if (window.__tokenSet) window.__tokenSet(v.trim());
+    loadVersion(); loadEngine(); loadSessionHealth();
+    loadUnits(); loadScores(); loadQueue();
+  });
+}
+window.__onAuthFail = function () {
+  dlgPrompt('访问口令失效', '口令不正确或已变更，请重新输入：').then(function (v) {
+    if (!v) return;
+    if (window.__tokenSet) window.__tokenSet(v.trim());
+    location.reload();
+  });
+};
+ensureToken();
 frontLog('info', '前端初始化完成');
 </script>
 </body>

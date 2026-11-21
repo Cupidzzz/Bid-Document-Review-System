@@ -80,9 +80,9 @@ if not defined MARK set "MARK=0"
 
 echo Server: http://127.0.0.1:8767/
 echo Log   : server.out.log
-rem start the server: -u unbuffered, --host 0.0.0.0 for LAN access
+rem start the server: -u unbuffered; host 127.0.0.1 = localhost only
 rem the server runs in a separate minimized window; closing it stops the service
-start "" /min cmd /c ""%PY%" -u server.py --host 0.0.0.0 --port 8767 >> server.out.log 2>&1"
+start "" /min cmd /c ""%PY%" -u server.py --host 127.0.0.1 --port 8767 >> server.out.log 2>&1"
 
 rem --- 3) read back only the lines written after we started ---
 rem (ping instead of timeout: timeout fails when stdin is redirected)

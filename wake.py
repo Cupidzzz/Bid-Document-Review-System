@@ -470,6 +470,19 @@ def ensure_project_session(project, cwd=None, title=None, base=DEFAULT_BASE,
     return sid, '已新建并绑定（%s）' % '；'.join(notes) if notes else '已新建并绑定', True
 
 
+def _session_gone(err):
+    """判断唤醒失败是否因为会话已不存在（session/not-found 等）。"""
+    return bool(err) and ('not-found' in err or 'not found' in err)
+
+
+def _drop_project_mapping(project):
+    """清除某项目的会话映射（用于该会话已被删除时重建）。"""
+    cfg = _load_cfg()
+    old = (cfg.get('projects') or {}).pop(project, None)
+    _save_cfg(cfg)
+    return old
+
+
 def auto_session_enabled():
     return os.environ.get(AUTO_SESSION_ENV) == '1'
 
@@ -482,33 +495,55 @@ def wake(text, session_id=None, mode='queue', base=DEFAULT_BASE, force=False,
     向会话注入一条用户消息以唤醒 agent。
     project 给出时按「项目 → 会话」映射选目标（未映射则回落默认会话）。
     返回 (是否成功, 说明)。
+    逻辑修正（2026-11-18）：若映射的会话已被删除（session/not-found），
+    且 ENABLE_AUTO_SESSION=1，则清掉旧映射、自动新建一个项目专属会话再唤醒，
+    而不是只会报「没发现这个会话」。
     """
     if not force and os.environ.get('ENABLE_WAKE') != '1':
         return False, '未启用（需 ENABLE_WAKE=1）'
+
+    def _prompt(sid):
+        args = {'request': {
+            'requestId': 'wake-' + str(int(time.time() * 1000)),
+            'sessionId': sid, 'mode': mode,
+            'content': [{'type': 'text', 'text': text}],
+            'clientTimeZone': 'Asia/Shanghai'}}
+        try:
+            status, body = rpc('session/prompt', args, base=base)
+        except Exception as e:
+            return False, '调用异常：%r' % e
+        ok = (status == 200 and isinstance(body, dict)
+              and (body.get('result') or {}).get('ok') is True)
+        if ok:
+            return True, ''
+        err = ''
+        if isinstance(body, dict):
+            err = json.dumps((body.get('result') or {}).get('error') or body,
+                             ensure_ascii=False)[:200]
+        else:
+            err = str(body)[:200]
+        return False, 'HTTP %s %s' % (status, err)
+
     sid, src, title = resolve_session(session_id, project=project)
     if not sid:
         return False, '缺少 sessionId（未指定、无绑定文件、DSH_SESSION_ID 也未设置）'
-    args = {'request': {
-        'requestId': 'wake-' + str(int(time.time() * 1000)),
-        'sessionId': sid, 'mode': mode,
-        'content': [{'type': 'text', 'text': text}],
-        'clientTimeZone': 'Asia/Shanghai'}}
-    try:
-        status, body = rpc('session/prompt', args, base=base)
-    except Exception as e:
-        return False, '调用异常：%r' % e
-    ok = (status == 200 and isinstance(body, dict)
-          and (body.get('result') or {}).get('ok') is True)
+    ok, err = _prompt(sid)
     if ok:
         who = sid + ('（%s）' % title if title else '')
         return True, '已唤醒会话 %s，来源：%s' % (who, src)
-    err = ''
-    if isinstance(body, dict):
-        err = json.dumps((body.get('result') or {}).get('error') or body,
-                         ensure_ascii=False)[:200]
-    else:
-        err = str(body)[:200]
-    return False, 'HTTP %s %s' % (status, err)
+    # 会话已不存在：自动重建（需 ENABLE_AUTO_SESSION=1 且给了 project）
+    if project and auto_session_enabled() and _session_gone(err):
+        _drop_project_mapping(project)          # 清掉指向已删会话的旧映射
+        sid2, why2, made = ensure_project_session(project)
+        if sid2:
+            ok2, err2 = _prompt(sid2)
+            if ok2:
+                return True, ('原会话已删除，已自动新建 %s 并唤醒'
+                              % sid2) if made else ('原会话已删除，改用会话 %s 唤醒'
+                                                   % sid2)
+            return False, '会话不存在，重建/换用 %s 后仍唤醒失败：%s' % (sid2, err2)
+        return False, '会话不存在，且自动重建失败：%s' % (why2 or err)
+    return False, err
 
 
 def _print_sessions(rows, marker_sid='', full=False):
