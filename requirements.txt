@@ -1,0 +1,31 @@
+# 投标文件复核系统 —— 依赖清单（P1-4：锁定版本，保证换机器可复现）
+#
+# 部署说明（搬到新机器时）：
+#   1. 安装 Python 3.9；
+#   2. 把 vendor/ 与 vendor_ov/ 两个目录**整个复制**过去（已打包好，无需重新 pip 下载）；
+#   3. 若要重新下载依赖，运行 `python download_ocr.py <输出目录>` 从镜像拉取
+#      （下载会校验 SHA256，校验不过会拒用，见 download_ocr.py）；
+#   4. OCR 模型（PP-OCRv4 det/rec/cls）随 vendor 模型目录一起复制。
+
+# —— OCR 引擎（onnxruntime 后端，vendor/ 目录）——
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.19.2
+opencv-python-headless==4.5.4.60
+numpy==1.26.4
+pyclipper==1.3.0.post6
+shapely==2.0.7
+Pillow==11.3.0
+PyYAML==6.0.3
+
+# —— 报告导出 ——
+reportlab==4.5.1
+
+# —— 基础工具 ——
+six==1.17.0
+tqdm==4.70.1
+colorama==0.4.6
+packaging==26.3
+requests==2.25.1
+
+# —— OpenVINO 引擎（可选：vendor_ov/ 目录，不装则自动回退 onnxruntime）——
+# openvino==2025.3.0

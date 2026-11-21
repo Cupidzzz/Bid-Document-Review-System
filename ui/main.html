@@ -360,7 +360,11 @@ function dlgShow(title, html, buttons) {
     d.className = 'dlg';
     var head = el('div', { class: 'dlg-head', text: title });
     var body = el('div', { class: 'dlg-body' });
-    body.innerHTML = html;          // 支持 \n 换行与简单富文本
+    // P1-3：html 参数当纯文本渲染，\n 转成换行，不解析 HTML（防项目名/单位名注入脚本）
+    (html == null ? '' : String(html)).split('\n').forEach(function (line, i) {
+      if (i > 0) body.appendChild(document.createElement('br'));
+      body.appendChild(document.createTextNode(line));
+    });
     var row = el('div', { class: 'dlg-row' });
     var focusBtn = null;
     (buttons || []).forEach(function (b) {
@@ -1890,9 +1894,9 @@ function showDoc(name, title) {
       }
       var w = window.open('', '_blank');
       if (!w) { alert('浏览器拦截了新窗口，请允许弹窗'); return; }
-      var esc = String(r['内容']).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      var escHtml = esc(r['内容']);
       w.document.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">' +
-        '<title>' + title + '</title><style>' +
+        '<title>' + esc(title) + '</title><style>' +
         'body{font:14px/1.7 "Microsoft YaHei",sans-serif;color:#1f2733;' +
         'background:#f4f6fa;margin:0;padding:24px}' +
         'pre{background:#fff;border:1px solid var(--c-line2);border-radius:10px;' +
@@ -1907,7 +1911,7 @@ function showDoc(name, title) {
         'font:13px "Microsoft YaHei",sans-serif;color:#1f2733}' +
         'div.bar a{color:var(--c-info)}' +
         '</style></head><body><h2>' + title + '</h2>' +
-        '<p class="m">' + r['文件'] + '　' + r['字节'] + ' 字节</p>' +
+        '<p class="m">' + esc(r['文件']) + '　' + r['字节'] + ' 字节</p>' +
         (name === '复核结果汇总.md' ?
           '<div class="bar"><label>导出：</label>' +
           '<select id="expSel">' +
@@ -1936,7 +1940,7 @@ function showDoc(name, title) {
           'this.value="";' +
           '};' +
           '<\/script>' : '') +
-        '<pre>' + esc + '</pre></body></html>');
+        '<pre>' + escHtml + '</pre></body></html>');
       w.document.close();
       m.style.color = 'var(--c-act)';
       m.textContent = '已打开：' + name;

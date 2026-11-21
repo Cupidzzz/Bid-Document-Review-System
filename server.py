@@ -1656,6 +1656,106 @@ def total_consistency_errors(d):
     return bad
 
 
+def _vol_page_text(vol_lines, ocr_cache, vol, pg):
+    """取某册某页的文本：文字层（>40 字）优先，否则回 OCR 缓存。"""
+    ls = vol_lines.get(vol) or []
+    if 1 <= pg <= len(ls):
+        t = (ls[pg - 1] or '').strip()
+        if len(t) > 40:
+            return t
+    return ocr_cache.get((vol, pg), '')
+
+
+def verify_result_evidence(d, pname, unit):
+    """P1-1：服务端强校验证据——出处页码真实存在 + 依据关键数字在对应页可查。
+
+    返回 {'存疑': [...], '无册正文': bool}；存疑项 {'序号','类型','详情'}。
+    类型：'页码缺失'（该页无文字层也无 OCR）／'证据存疑'（依据里的长数字串在该页找不到）。
+    这是防「提示词注入诱导编造证据」的最后一道服务端闸门。
+    """
+    import ocr_text as _ot
+    sus = []
+    no_bids = True
+    pd = project_dir_for(pname)
+    if pd:
+        bdir = os.path.join(pd, '投标文件')
+        up = os.path.join(bdir, unit)
+        vol_lines, ocr_cache = {}, {}
+        if os.path.isdir(up):
+            no_bids = False
+            # 每册文字层正文
+            for x in sorted(os.listdir(up)):
+                if x.endswith('.txt') and not x.endswith('.pages.txt'):
+                    vol = os.path.splitext(x)[0]
+                    try:
+                        with open(os.path.join(up, x), encoding='utf-8') as f:
+                            _ls = f.read().split('\n')
+                    except Exception:
+                        continue
+                    vol_lines[vol] = _ls
+                    _low = vol.lower()
+                    for _ext in ('.pdf', '.docx', '.doc'):
+                        if _low.endswith(_ext):
+                            vol_lines[vol[:-len(_ext)]] = _ls
+                            break
+            # 各册 OCR 缓存文本（页号 → 文本）
+            for fn in sorted(os.listdir(up)):
+                if not fn.endswith('.pages'):
+                    continue
+                pdir = os.path.join(up, fn)
+                if not os.path.isdir(pdir):
+                    continue
+                vol = fn[:-len('.pages')]
+                # 册名别名：出处可能写「技术册p12」（去扩展名）或「技术册.pdfp12」
+                _vnames = [vol]
+                _vlow = vol.lower()
+                for _ext in ('.pdf', '.docx', '.doc'):
+                    if _vlow.endswith(_ext):
+                        _vnames.append(vol[:-len(_ext)])
+                        break
+                info = _ot.collect_page_images(pdir)
+                per = (info or {}).get('页') or {}
+                for pg, imgs in per.items():
+                    for img in imgs:
+                        cf = _ot._cache_file(img)
+                        if not os.path.isfile(cf):
+                            continue
+                        try:
+                            with open(cf, encoding='utf-8') as f:
+                                cd = json.load(f)
+                            txt = (cd or {}).get('文字') if isinstance(cd, dict) else ''
+                        except Exception:
+                            txt = ''
+                        if txt:
+                            for _vn in _vnames:
+                                ocr_cache[(_vn, pg)] = txt
+                            break
+        for it in (d.get('评分') or []):
+            cit = as_text(it.get('出处'))
+            basis = as_text(it.get('依据'))
+            if not cit:
+                continue
+            digits = re.findall(r'\d{6,}', basis or '')
+            for m in re.finditer(
+                    r'(?P<vol>[^\s、，,]*?)p(?P<a>\d+)(?:\s*-\s*(?P<b>\d+))?', cit):
+                a = int(m.group('a'))
+                b = int(m.group('b')) if m.group('b') else a
+                vol = m.group('vol') or ''
+                for pg in range(a, b + 1):
+                    txt = _vol_page_text(vol_lines, ocr_cache, vol, pg)
+                    if not txt:
+                        sus.append({'序号': it.get('序号'), '类型': '页码缺失',
+                                    '详情': '出处 %sp%d 在该册无文字层也无 OCR 文本'
+                                    % (vol, pg)})
+                        continue
+                    for dgt in digits:
+                        if dgt not in txt:
+                            sus.append({'序号': it.get('序号'), '类型': '证据存疑',
+                                        '详情': '依据数字 %s 在 %sp%d 页文本找不到'
+                                        % (dgt, vol, pg)})
+    return {'存疑': sus, '无册正文': no_bids}
+
+
 def check_result_shape(d):
     """检查复核结果 JSON 的必备字段；返回缺失/类型不符的字段名列表"""
     if not isinstance(d, dict):
@@ -6067,6 +6167,53 @@ class H(http.server.BaseHTTPRequestHandler):
         return self._send(200, {'ok': True, '任务': 'report_issue',
                                 '已记录': note[:80]})
 
+    def _verify_evidence(self, params):
+        """P1-1：证据强校验命令——agent 结单前自查出处页码与依据数字是否真实可查。
+
+        参数：项目、投标单位。读该单位 `复核报告\<单位>_复核结果.json`，
+        返回「存疑」清单（页码缺失/证据存疑）。
+        """
+        pname = (params.get('项目') or '').strip()
+        unit = (params.get('投标单位') or '').strip()
+        if not pname:
+            return self._err(400, '缺少「项目」参数')
+        if not unit:
+            return self._err(400, '缺少「投标单位」参数')
+        pd = project_dir_for(pname)
+        if not pd:
+            return self._err(404, '项目「%s」不存在' % pname)
+        fp = os.path.join(pd, '复核报告', unit + '_复核结果.json')
+        if not os.path.isfile(fp):
+            return self._err(404, '未找到「%s」的复核结果（%s）' % (unit, fp))
+        try:
+            with open(fp, encoding='utf-8') as f:
+                d = json.load(f)
+        except Exception as e:
+            return self._err(500, '读取结果失败：%r' % e)
+        evd = verify_result_evidence(d, pname, d.get('投标人') or unit)
+        sus = evd['存疑']
+        if sus:
+            d['证据存疑'] = sus
+            try:
+                with open(fp, 'w', encoding='utf-8') as f:
+                    json.dump(d, f, ensure_ascii=False, indent=1)
+            except Exception:
+                traceback.print_exc()
+        else:
+            d.pop('证据存疑', None)
+            try:
+                with open(fp, 'w', encoding='utf-8') as f:
+                    json.dump(d, f, ensure_ascii=False, indent=1)
+            except Exception:
+                traceback.print_exc()
+        return self._send(200, {
+            'ok': True, '任务': 'verify_evidence', '项目': pname,
+            '投标单位': d.get('投标人') or unit,
+            '存疑条数': len(sus), '存疑': sus[:60],
+            '说明': '「页码缺失」= 出处该页无文字层也无 OCR；'
+                    '「证据存疑」= 依据里的长数字串在该页文本找不到，'
+                    '可能是编造证据或 OCR 漏识别，须回原图核对后再结单。'})
+
     def _claim(self, params):
         """把某单位的「待处理」任务标记为「处理中」，并记录开始时间。
 
@@ -6301,6 +6448,29 @@ class H(http.server.BaseHTTPRequestHandler):
                     json.dump(d, _wf, ensure_ascii=False, indent=1)
             except Exception:
                 traceback.print_exc()
+
+        # P1-1：证据强校验——出处页码真实 + 依据长数字串可查（防注入诱导编造证据）
+        _evd = verify_result_evidence(d, pname, real_unit)
+        if _evd['存疑']:
+            d['证据存疑'] = _evd['存疑']
+        else:
+            d.pop('证据存疑', None)
+        # P1-1：异常高分/全满分告警（提示，不阻断）
+        try:
+            _rows = d.get('评分') or []
+            _full_f = float(d.get('满分') or 0)
+            _scored = sum(float(x.get('得分')) or 0 for x in _rows)
+            _maxed = _full_f > 0 and _scored >= _full_f - 0.01
+            d['高分告警'] = ('全项满分，请人工复核确认' if _maxed else '')
+        except Exception:
+            d['高分告警'] = ''
+        if not d.get('高分告警'):
+            d.pop('高分告警', None)
+        try:
+            with open(os.path.join(rd, target), 'w', encoding='utf-8') as _wf:
+                json.dump(d, _wf, ensure_ascii=False, indent=1)
+        except Exception:
+            traceback.print_exc()
 
         # 校验
         import evidence_spec as es
@@ -6714,6 +6884,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
         if task == 'report_issue':
             return self._report_issue(params)
+
+        if task == 'verify_evidence':
+            return self._verify_evidence(params)
 
         if task == 'claim':
             return self._claim(params)
