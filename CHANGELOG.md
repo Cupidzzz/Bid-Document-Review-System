@@ -4,6 +4,34 @@
 > 新记录写在最前（时间倒序）。
 > 相关文档：`复核方法.md`（方法层）、`通用口径.md`（跨项目判断）、各项目的 `项目要点.md`。
 
+## P2 第一批 · 2026-11-18　LICENSE + 版本同步 + README 补全 + 关键 JSON 原子写
+
+**触发**（用户）：按审计 P2，先做"交付门面 + 数据安全"。
+
+**改动**：
+
+| 项 | 内容 |
+|---|---|
+| LICENSE（P2-9） | 补 MIT 许可证（版权行占位"投标文件复核系统维护者"） |
+| 版本同步（P2-8） | 变更记录 → `CHANGELOG.md`；sync_code 打版本 tag + `push --tags`（公开仓库现有 v1.12.0） |
+| README（P2-11/P2-7） | 补安装步骤/OCR 模型来源/目录结构/已知限制；标注"仅 Windows" |
+| 并发写（P2-4） | 评分标准、任务创建、复核结果的关键 JSON 写盘改 `atomic_write_json`（tmp + os.replace） |
+
+**文件**：`LICENSE`、`sync_code.py`、`server.py`
+
+## P2 第二批 · 2026-11-18　异常日志 + docx 解析安全
+
+**触发**（用户）：按审计 P2 第二批做健壮性。
+
+**改动**：
+
+| 项 | 内容 |
+|---|---|
+| 异常日志（P2-2） | `queue_list` 读队列坏文件告警（打印 + front_log）；`load_rules` 读评分标准损坏告警，不再静默返回空 |
+| docx 安全（P2-10） | `docx_text.extract` 加 zip 炸弹体积上限（document.xml >100MB 拒绝）+ 拒绝含 DTD/实体的 XML |
+
+**文件**：`server.py`、`docx_text.py`、`tests\_verify_docx_safety.py`
+
 ## P1-4 依赖完整性 + 锁定 · 2026-11-18
 
 **触发**（用户）：要搬到别的机器，需要保证"装得起来、装出来是对的"。

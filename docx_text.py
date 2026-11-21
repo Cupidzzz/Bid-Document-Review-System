@@ -7,14 +7,25 @@ from xml.etree import ElementTree as ET
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 CJK = re.compile(r'[\u4e00-\u9fff]')
+# P2-10：zip 炸弹防护——document.xml 解压后体积上限（100 MB）
+_MAX_XML_BYTES = 100 * 1024 * 1024
 
 
 def extract(path):
     with zipfile.ZipFile(path) as z:
         try:
-            xml = z.read('word/document.xml')
+            info = z.getinfo('word/document.xml')
         except KeyError:
             raise ValueError('不是有效的 docx（缺 word/document.xml）')
+        # P2-10：zip 炸弹防护——解压后体积超上限直接拒绝
+        if info.file_size > _MAX_XML_BYTES:
+            raise ValueError('docx 的 document.xml 解压后 %.1f MB，超过 %d MB 上限，已拒绝'
+                             % (info.file_size / 1048576.0,
+                                _MAX_XML_BYTES // 1048576))
+        xml = z.read('word/document.xml')
+    # P2-10：拒绝含 DTD/实体的 XML（正常 docx 的 document.xml 不含，含了说明是攻击）
+    if b'<!DOCTYPE' in xml or b'<!ENTITY' in xml:
+        raise ValueError('docx 的 document.xml 含 DTD/实体声明，已拒绝')
     root = ET.fromstring(xml)
     body = root.find(W + 'body')
     paras, tables = [], []
