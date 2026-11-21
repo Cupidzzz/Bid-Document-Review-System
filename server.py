@@ -18,7 +18,9 @@ import urllib.parse
 
 from validation import (as_text, check_pending_reason,
                         check_result_shape, total_consistency_errors)
-from storage import atomic_write_json, backup_once
+from storage import (atomic_write_json, backup_once, front_log_add,
+                     issue_add, issue_list, rescue_log_add,
+                     FRONT_LOG, ISSUE_LOG, RESCUE_LOG, WORK)
 
 TASKS = {}
 TLOCK = threading.Lock()
@@ -52,7 +54,6 @@ def task_log(tid, msg):
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.join(HERE, 'ui')
-WORK = os.path.join(HERE, 'work')
 RULES = os.path.join(WORK, 'rules.json')
 # 预计耗时：只识别「必需图片」（约导出图片的 60%），实测约 3.5 秒/张
 # 故 预计分钟 = 图片数 × 0.6 × 3.5 / 60 ≈ 图片数 × 0.035
@@ -958,9 +959,6 @@ WAKE_MAX_TRIES = int(os.environ.get('WAKE_MAX_TRIES') or 3)
 # 看门狗：AUTO_RESCUE=0 关闭；RESCUE_TICK 秒一轮
 AUTO_RESCUE = (os.environ.get('AUTO_RESCUE') or '1') != '0'
 RESCUE_TICK = int(os.environ.get('RESCUE_TICK') or 120)
-RESCUE_LOG = os.path.join(WORK, 'rescue_log.json')
-FRONT_LOG = os.path.join(WORK, 'front_log.json')   # 前端上报的运行/错误日志（最多 300 条）
-ISSUE_LOG = os.path.join(WORK, '复核问题反馈.json')   # agent 复核中发现的问题反馈（最多 500 条）
 API_TOKEN = ''   # 访问口令：main() 启动时生成随机值；前端调 /api/* 需带 X-API-Token
 _TASK_LOCK = threading.Lock()
 
@@ -1003,85 +1001,6 @@ def minutes_since(s):
         except Exception:
             continue
     return None
-
-
-def rescue_log_add(kind, tid, msg, **kw):
-    """记一条兜底日志（最多留 300 条）。"""
-    try:
-        items = []
-        if os.path.isfile(RESCUE_LOG):
-            try:
-                with open(RESCUE_LOG, encoding='utf-8') as f:
-                    items = json.load(f) or []
-            except Exception:
-                items = []
-        entry = {'时间': now(), '类型': kind, '任务': tid, '说明': msg}
-        entry.update(kw)
-        items.append(entry)
-        items = items[-300:]
-        os.makedirs(WORK, exist_ok=True)
-        with open(RESCUE_LOG, 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False, indent=1)
-    except Exception:
-        traceback.print_exc()
-
-
-def front_log_add(level, msg, **kw):
-    """记一条前端上报日志（最多留 300 条），落盘 work\\front_log.json。"""
-    try:
-        items = []
-        if os.path.isfile(FRONT_LOG):
-            try:
-                with open(FRONT_LOG, encoding='utf-8') as f:
-                    items = json.load(f) or []
-            except Exception:
-                items = []
-        entry = {'时间': now(), '级别': level, '消息': msg}
-        entry.update(kw)
-        items.append(entry)
-        items = items[-300:]
-        os.makedirs(WORK, exist_ok=True)
-        with open(FRONT_LOG, 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False, indent=1)
-    except Exception:
-        traceback.print_exc()
-
-
-def issue_add(pname, unit, category, note, **kw):
-    """记一条复核问题反馈（最多留 500 条），落盘 work\\复核问题反馈.json。"""
-    try:
-        items = []
-        if os.path.isfile(ISSUE_LOG):
-            try:
-                with open(ISSUE_LOG, encoding='utf-8') as f:
-                    items = json.load(f) or []
-            except Exception:
-                items = []
-        entry = {'时间': now(), '项目': pname, '投标单位': unit,
-                 '类别': category, '现象': note}
-        entry.update(kw)
-        items.append(entry)
-        items = items[-500:]
-        os.makedirs(WORK, exist_ok=True)
-        with open(ISSUE_LOG, 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False, indent=1)
-    except Exception:
-        traceback.print_exc()
-
-
-def issue_list(pname=''):
-    """读复核问题反馈（可按项目过滤），最新的在前。"""
-    items = []
-    if os.path.isfile(ISSUE_LOG):
-        try:
-            with open(ISSUE_LOG, encoding='utf-8') as f:
-                items = json.load(f) or []
-        except Exception:
-            items = []
-    if pname:
-        items = [x for x in items if (x.get('项目') or '') == pname]
-    items.reverse()
-    return items
 
 
 def _inflight_dump():
