@@ -18,6 +18,7 @@ import urllib.parse
 
 from validation import (as_text, check_pending_reason,
                         check_result_shape, total_consistency_errors)
+from storage import atomic_write_json, backup_once
 
 TASKS = {}
 TLOCK = threading.Lock()
@@ -491,43 +492,6 @@ MIME = {'.html': 'text/html; charset=utf-8',
         '.js': 'application/javascript; charset=utf-8',
         '.css': 'text/css; charset=utf-8'}
 
-
-def backup_once(path):
-    """保存前备份一份 .bak（只保留最近一次）"""
-    try:
-        if os.path.isfile(path):
-            b = path + '.bak'
-            if os.path.isfile(b):
-                os.remove(b)
-            shutil.copy2(path, b)
-    except Exception:
-        traceback.print_exc()
-
-
-def atomic_write_json(path, obj, backup=False):
-    """M3（2026-11-12）：原子写 JSON——tmp + os.replace，失败不留半截、不截断旧件。
-
-    backup=True 时先调用 backup_once 备份 .bak（用于复核结果这类关键文件）。
-    返回是否成功。
-    """
-    tmp = path + '.tmp.' + str(os.getpid())
-    try:
-        if backup and os.path.isfile(path):
-            backup_once(path)
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(obj, f, ensure_ascii=False, indent=1)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-        return True
-    except Exception:
-        traceback.print_exc()
-        try:
-            if os.path.isfile(tmp):
-                os.remove(tmp)
-        except Exception:
-            pass
-        return False
 
 # ============ 评分标准原文结构化拆分 ============
 # 评分标准文本高度公式化，按句切分后按关键词归类即可，不依赖模型
