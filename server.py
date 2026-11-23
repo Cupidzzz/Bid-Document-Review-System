@@ -2243,7 +2243,27 @@ class H(http.server.BaseHTTPRequestHandler):
         no = (d.get('项目编号') or '').strip()
         if not name:
             return self._err(400, '项目名称不能为空')
+        old_name = (d.get('旧名称') or '').strip()
         pdir = os.path.join(PROJ, name)
+
+        # 改名迁移：旧名称 != 新名称时，把整个旧目录重命名过来，评分标准等数据不丢
+        if old_name and old_name != name:
+            old_dir = os.path.join(PROJ, safe_name(old_name, ''))
+            if os.path.isdir(old_dir) and os.path.isdir(pdir):
+                return self._err(409, '项目「%s」已存在，无法把「%s」改名成它'
+                                 % (name, old_name))
+            if os.path.isdir(old_dir):
+                try:
+                    os.rename(old_dir, pdir)
+                except Exception as e:
+                    return self._err(500, '改名失败：%r' % e)
+                # 同步唤醒映射（项目→会话、已结项记录）里的旧名称 key
+                try:
+                    import wake as _wk
+                    _wk.rename_project(old_name, name)
+                except Exception:
+                    traceback.print_exc()
+
         subs = ['投标文件', '招标文件', '评委打分', '复核报告']
         created = []
         try:

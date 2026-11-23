@@ -234,6 +234,22 @@ def retire_project(project):
     return sid
 
 
+def rename_project(old_name, new_name):
+    """项目改名：把 projects/retired 映射里的旧名称 key 改成新名称。"""
+    if not old_name or old_name == new_name:
+        return False
+    cfg = _load_cfg()
+    changed = False
+    for k in ('projects', 'retired'):
+        d = cfg.get(k) or {}
+        if old_name in d:
+            d[new_name] = d.pop(old_name)
+            changed = True
+    if changed:
+        _save_cfg(cfg)
+    return changed
+
+
 def clear_target():
     try:
         os.remove(TARGET_FILE)

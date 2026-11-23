@@ -2955,7 +2955,14 @@ function loadUnits() {
             (ok ? 'var(--c-act)' : 'var(--c-mute)'),
             text: ok ? (u['得分'] + ' / ' + u['满分']) : '—' }),
           el('td', { style: 'padding:6px;font-size:12px;color:var(--c-est)',
-            text: (u['未决项'] || []).length ? ('项 ' + u['未决项'].join('、')) : '无' }),
+            text: (function () {
+              var und = u['未决项'] || [];
+              // 兼容两种格式：旧=序号数组 [1,4,7]，新=对象数组 [{序号,名称,…}]
+              var nums = und.map(function (x) {
+                return (x && typeof x === 'object') ? (x['序号'] || '') : x;
+              }).filter(function (s) { return s !== '' && s !== null && s !== undefined; });
+              return nums.length ? ('项 ' + nums.join('、')) : '无';
+            })() }),
           el('td', { style: 'padding:6px;font-size:12px;color:var(--c-mute2)',
             text: u['复核时间'] || '' }),
           tdCost,
@@ -3321,11 +3328,15 @@ document.getElementById('btnProjSave').onclick = function () {
   var no = document.getElementById('pno').value.trim();
   var m = document.getElementById('pmsg2');
   if (!name) { alert('请填写项目名称'); return; }
+  // 改名迁移：把下拉框当前选中的项目作为「旧名称」传给后端，后端重命名目录（评分标准等不丢）
+  var oldName = '';
+  var sel = document.getElementById('projSel');
+  if (sel && sel.value && sel.value !== name) oldName = sel.value;
   m.style.color = 'var(--c-mute2)';
   m.textContent = '保存中…';
   fetch('/api/project', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 项目名称: name, 项目编号: no })
+    body: JSON.stringify({ 项目名称: name, 项目编号: no, 旧名称: oldName })
   }).then(function (r) { return r.json(); }).then(function (r) {
     if (!r.ok) {
       m.innerHTML = '';
