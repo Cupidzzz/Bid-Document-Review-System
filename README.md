@@ -67,13 +67,15 @@ start_server.cmd
 然后浏览器打开 http://127.0.0.1:8767/ —— 首次打开会弹「访问口令」框，口令在
 服务启动窗口的「口令」行（或 `workpi_token.txt`）；每重启一次口令会重新生成。
 
-## 安装（搬到新机器）
+## 安装
 
-1. 安装 Python 3.9；
-2. 把 `vendor/`、`vendor_ov/` 两个目录**整个复制**过去（已打包好，含 OCR 引擎与模型）；
-   若要重新下载依赖，运行 `python download_ocr.py <输出目录>`（下载会校验 SHA256）；
-3. 依赖版本见 `requirements.txt`（锁定版本，保证可复现）；
-4. 运行 `start_server.cmd`，浏览器打开 http://127.0.0.1:8767/ 输访问口令即可。
+- **从零部署（新机器 / 刚 clone）**：见 `DEPLOY.md`。GitHub 仓库**不含** `vendor/`、`vendor_ov/`
+  （OCR 引擎与模型约 425 MB，未进 git），需用 `download_ocr.py` 补依赖（PP-OCRv4 模型随依赖包
+  自带）、`download_ov.py` 补 OpenVINO 加速引擎（可选）。
+- **本机已跑通、换一台机器**：把本机 `vendor/`、`vendor_ov/` 两个目录**整个复制**过去即可
+  （含 OCR 引擎与模型），无需重新下载。
+
+其余步骤（Python 3.9、`start_server.cmd`、访问口令）见 `DEPLOY.md`。
 
 ## 目录结构
 
